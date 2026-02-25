@@ -184,7 +184,12 @@ def _render_config_editor() -> None:
     cfg: dict[str, Any] = load_config(CONFIG_PATH)
 
     with st.form("config_form", clear_on_submit=False):
-        grid_step = st.number_input("grid_step_pips", min_value=1.0, value=float(cfg["grid"]["grid_step_pips"]), step=1.0)
+        grid_step_points = st.number_input(
+            "grid_step_points",
+            min_value=10,
+            value=int(cfg["grid"].get("grid_step_points", 100)),
+            step=10,
+        )
         levels_text = st.text_input(
             "levels_manual (comma-separated)",
             value=", ".join(str(v) for v in cfg["levels"].get("levels_manual", [])),
@@ -218,7 +223,8 @@ def _render_config_editor() -> None:
                 st.error(f"Invalid level: {chunk}")
                 return
 
-        cfg["grid"]["grid_step_pips"] = grid_step
+        cfg["grid"]["grid_step_points"] = int(grid_step_points)
+        cfg["grid"]["grid_step_pips"] = float(grid_step_points) / 10.0
         cfg["levels"]["levels_manual"] = parsed_levels
         cfg["levels"]["auto_levels_lookback_days"] = int(lookback_days)
         cfg["closing"]["imbalance_threshold"] = imbalance_threshold

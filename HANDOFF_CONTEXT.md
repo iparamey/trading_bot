@@ -23,12 +23,13 @@ Quick context file for new agents joining this project, so they can continue wit
   - if price drift from anchor exceeds threshold, anchor is moved and out-of-window pending can be canceled.
 
 ## Key Configuration (current direction)
-- `grid.grid_step_points`: 200
+- `grid.grid_step_points`: 100
 - `grid.grid_levels_each_side`: 15
 - `grid.dynamic_recenter_enabled`: true
 - `grid.recenter_threshold_points`: 150
 - `grid.cancel_outside_on_recenter`: true
 - `risk.fixed_lot`: 0.05
+- Runtime note: bot logic uses `grid_step_points` first, `grid_step_pips` only as fallback.
 
 ## Pending Order Logic (latest)
 - Bot now tries to place both BUY and SELL pending on each grid level.
@@ -40,14 +41,24 @@ Quick context file for new agents joining this project, so they can continue wit
 - If an active position already exists on the same level+side, pending is not re-added until that position is closed.
 
 ## Closing Logic (latest)
-- Level-based selective close exists.
+- Auto TP assignment by levels is enabled (`closing.auto_tp_enabled: true`).
 - Auto levels are built from D1 fractals + pivots.
 - Auto-level spacing is linked to grid step:
   - `min_distance_pips = (grid_step_points * levels.level_spacing_multiplier) / 10`
-- Breakout buffer is enabled before level close:
-  - `buffer = grid_step_price * closing.level_break_buffer_multiplier`
-  - BUY close when `bid >= level + buffer`
-  - SELL close when `ask <= level - buffer`
+- TP target level selection:
+  - BUY -> nearest level `>= open_price + (tp_min_distance_steps * grid_step_price)`
+  - SELL -> nearest level `<= open_price - (tp_min_distance_steps * grid_step_price)`
+- Anti-imbalance TP side filter:
+  - `imbalance = open_buy_count - open_sell_count`
+  - if `imbalance >= tp_imbalance_threshold`, TP is assigned only to BUY positions
+  - if `imbalance <= -tp_imbalance_threshold`, TP is assigned only to SELL positions
+  - otherwise TP can be assigned to both sides
+- Optional hard rebalance mode:
+  - when `tp_clear_disallowed_on_imbalance: true`, existing TP is removed from disallowed side during imbalance
+- TP sync load guards:
+  - sync runs at `tp_sync_interval_sec` cadence (not every bot cycle)
+  - max TP modifications per sync is limited by `tp_max_updates_per_cycle`
+- Legacy level-based selective close remains in code as optional fallback when auto-TP is disabled.
 
 ## UI Features Added
 - Start/Stop bot in background thread.
@@ -61,6 +72,8 @@ Quick context file for new agents joining this project, so they can continue wit
 - Manual TP tools for open positions:
   - Apply BUY TP level to all open BUY positions
   - Apply SELL TP level to all open SELL positions
+- Config editor panel (save + hot reload).
+- Recent bot action log panel and raw status payload expander.
 
 ## Reliability Fixes Already Applied
 - MetaApi `comment + clientId` validation issue resolved by shortening/removing `clientId` usage.
@@ -78,6 +91,10 @@ Quick context file for new agents joining this project, so they can continue wit
   - stop all running bot instances,
   - wait briefly,
   - run a single instance.
+- `config.yaml` currently stores broker/API credentials in plain text. Treat as secret and avoid sharing/committing.
+
+## Current Mismatch / Technical Debt
+- No structured close-reason journal yet; runtime events only in text logs.
 
 ## Data/Logging Status
 - `bot.log` and `bot.log.1` contain runtime events.

@@ -21,6 +21,7 @@ from mt5_utils import (
     BrokerTimeoutError,
     cancel_all_pending,
     cancel_order,
+    clear_position_take_profit,
     close_all_positions,
     close_position,
     connect_mt5,
@@ -152,6 +153,7 @@ class HedgingGridBot:
         self.equity_curve: deque[dict[str, float | str]] = deque(maxlen=5000)
         self.action_logs: deque[str] = deque(maxlen=400)
         self._last_action = "Idle"
+        self._last_tp_sync_at: datetime | None = None
         self._load_state()
 
     @property
@@ -494,6 +496,87 @@ class HedgingGridBot:
             self._record_action(f"Closed by level logic: {closed} positions")
         return closed
 
+    def _allowed_tp_sides(self, positions: list[Any]) -> set[str]:
+        """Limit TP assignment to overloaded side when side imbalance is large."""
+        threshold = int(self.config.get("closing", {}).get("tp_imbalance_threshold", 3))
+        if threshold <= 0:
+            return {"BUY", "SELL"}
+        buy_count = sum(1 for p in positions if p.side == "BUY")
+        sell_count = sum(1 for p in positions if p.side == "SELL")
+        imbalance = buy_count - sell_count
+        if imbalance >= threshold:
+            return {"BUY"}
+        if imbalance <= -threshold:
+            return {"SELL"}
+        return {"BUY", "SELL"}
+
+    def _auto_assign_take_profits(self) -> int:
+        """Auto-assign TP by distant levels and anti-imbalance side filter."""
+        closing_cfg = self.config.get("closing", {})
+        if not bool(closing_cfg.get("auto_tp_enabled", True)):
+            return 0
+        now = datetime.now(timezone.utc)
+        sync_interval_sec = float(closing_cfg.get("tp_sync_interval_sec", 15.0))
+        if self._last_tp_sync_at is not None and sync_interval_sec > 0:
+            elapsed = (now - self._last_tp_sync_at).total_seconds()
+            if elapsed < sync_interval_sec:
+                return 0
+        self._last_tp_sync_at = now
+
+        positions = get_positions(symbol=self.symbol, magic=self.magic)
+        if not positions:
+            return 0
+        manual_levels = [float(v) for v in self.config.get("levels", {}).get("levels_manual", [])]
+        all_levels = sorted(set(manual_levels + self.auto_levels))
+        if not all_levels:
+            return 0
+
+        step_price = self._grid_step_price()
+        if step_price <= 0:
+            return 0
+        min_distance_steps = float(closing_cfg.get("tp_min_distance_steps", 3.0))
+        min_distance = max(step_price * max(min_distance_steps, 0.0), step_price)
+        tolerance = pips_to_price(self.symbol, 0.5)
+        max_updates = int(closing_cfg.get("tp_max_updates_per_cycle", 30))
+        allowed_sides = self._allowed_tp_sides(positions)
+        clear_disallowed = bool(closing_cfg.get("tp_clear_disallowed_on_imbalance", False))
+
+        updated = 0
+        cleared = 0
+        for pos in positions:
+            if pos.side not in allowed_sides:
+                if clear_disallowed and pos.tp > 0:
+                    if clear_position_take_profit(pos.ticket):
+                        cleared += 1
+                    if updated + cleared >= max_updates:
+                        break
+                continue
+            if pos.side == "BUY":
+                candidates = [lvl for lvl in all_levels if lvl >= (pos.price_open + min_distance)]
+                if not candidates:
+                    continue
+                tp_level = min(candidates)
+            else:
+                candidates = [lvl for lvl in all_levels if lvl <= (pos.price_open - min_distance)]
+                if not candidates:
+                    continue
+                tp_level = max(candidates)
+            tp_level = normalize_price(self.symbol, tp_level)
+            if pos.tp > 0 and abs(pos.tp - tp_level) <= tolerance:
+                continue
+            if set_position_take_profit(pos.ticket, pos.symbol, tp_level):
+                updated += 1
+            if updated + cleared >= max_updates:
+                break
+
+        if updated or cleared:
+            sides_label = "/".join(sorted(allowed_sides))
+            self._record_action(
+                f"Auto TP sync: updated={updated}, cleared={cleared}, sides={sides_label}, "
+                f"min_distance={min_distance_steps:.1f}*step, interval={sync_interval_sec:.1f}s"
+            )
+        return updated + cleared
+
     def _imbalance_values(self) -> tuple[float, str | None]:
         positions = get_positions(symbol=self.symbol, magic=self.magic)
         buy_count = sum(1 for p in positions if p.side == "BUY")
@@ -659,10 +742,12 @@ class HedgingGridBot:
                 self._risk_guard()
                 self._refresh_auto_levels()
                 self._track_positions()
+                self._auto_assign_take_profits()
 
                 max_closes = int(self.config.get("closing", {}).get("max_closes_per_cycle", 3))
                 self._imbalance_close_priority(max_count=max_closes)
-                self._level_based_close(max_count=max_closes)
+                if not bool(self.config.get("closing", {}).get("auto_tp_enabled", True)):
+                    self._level_based_close(max_count=max_closes)
 
                 if not self.stop_new_orders:
                     self._sync_grid()

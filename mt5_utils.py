@@ -393,8 +393,8 @@ class _MetaApiBridge:
             LOGGER.warning("Failed to close position %s: %s", position_ticket, exc)
             return False
 
-    def modify_position_tp(self, position_ticket: int, tp_price: float) -> bool:
-        """Set/replace TP for an existing open position."""
+    def modify_position_tp(self, position_ticket: int, tp_price: float | None) -> bool:
+        """Set/replace TP for an existing open position, or clear it when None."""
         if not self.ensure_connected():
             return False
         try:
@@ -769,6 +769,14 @@ def set_position_take_profit(position_ticket: int, symbol: str, tp_price: float)
     if normalized_tp <= 0:
         return False
     return bridge.modify_position_tp(position_ticket, normalized_tp)
+
+
+def clear_position_take_profit(position_ticket: int) -> bool:
+    """Clear TP on an open position by ticket."""
+    bridge = _bridge()
+    if bridge is None:
+        return False
+    return bridge.modify_position_tp(position_ticket, None)
 
 
 def cancel_order(order_ticket: int) -> bool:
