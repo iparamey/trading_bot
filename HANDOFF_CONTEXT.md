@@ -2,6 +2,7 @@
 
 ## Purpose
 Quick context file for new agents joining this project, so they can continue without re-reading long chat history.
+- For full strategy behavior specification, read `STRATEGY_SPEC.md`.
 
 ## Current Stack
 - Runtime: Python 3.9
