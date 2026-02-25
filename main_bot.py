@@ -714,7 +714,8 @@ class HedgingGridBot:
 
     def status(self) -> BotStatus:
         """Return immutable status snapshot."""
-        account = get_account_info()
+        # Do not trigger broker reconnects from passive UI polling while bot is stopped.
+        account = get_account_info() if self.running else None
         return BotStatus(
             running=self.running,
             connected=is_connected(),

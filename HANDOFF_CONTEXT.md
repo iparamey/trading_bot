@@ -87,6 +87,10 @@ Quick context file for new agents joining this project, so they can continue wit
 - Added handling for broker RPC timeouts:
   - `BrokerTimeoutError` in `mt5_utils.py`
   - auto reconnect path in `main_bot.py`
+- Reconnect hardening:
+  - serialized reconnect attempts in bridge startup to avoid parallel reconnect storms
+  - stale RPC/websocket resources are closed before reconnect
+  - stopped bot no longer triggers live broker pulls via passive UI auto-refresh
 - Added more graceful connection shutdown logic to reduce leaked subscriptions.
 - Reduced noisy third-party logs in `setup_logging()`.
 - Fixed Streamlit auto-refresh via `streamlit-autorefresh`.

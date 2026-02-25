@@ -67,6 +67,9 @@ def _render_positions() -> None:
     if bot is None:
         st.info("Start the bot to view live positions.")
         return
+    if not bot.running:
+        st.info("Bot is stopped. Start it to fetch live positions.")
+        return
     positions = get_positions(symbol=bot.symbol, magic=bot.magic)
     st.caption(f"Positions count: {len(positions)}")
     if not positions:
@@ -96,6 +99,9 @@ def _render_pending_orders() -> None:
     bot = st.session_state.bot
     if bot is None:
         st.info("Start the bot to view pending orders.")
+        return
+    if not bot.running:
+        st.info("Bot is stopped. Start it to fetch live pending orders.")
         return
     pending_orders = get_pending_orders(symbol=bot.symbol, magic=bot.magic)
     st.caption(f"Pending orders count: {len(pending_orders)}")

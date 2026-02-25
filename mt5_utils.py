@@ -113,6 +113,7 @@ class _MetaApiBridge:
         self.loop: asyncio.AbstractEventLoop | None = None
         self.thread: threading.Thread | None = None
         self.lock = threading.Lock()
+        self.connect_lock = threading.Lock()
 
         self.api: Any = None
         self.account: Any = None
@@ -122,19 +123,31 @@ class _MetaApiBridge:
         self._is_stopping: bool = False
 
     def start(self) -> bool:
-        with self.lock:
-            if self.connected:
-                return True
-            if self.loop is None:
-                self.loop = asyncio.new_event_loop()
-                self.thread = threading.Thread(target=self._loop_runner, daemon=True, name="metaapi-loop")
-                self.thread.start()
-        try:
-            return self._call(self._connect_async())
-        except Exception as exc:  # noqa: BLE001
-            LOGGER.exception("MetaApi start failed: %s", exc)
-            self.connected = False
-            return False
+        # Avoid concurrent reconnect storms from bot loop + UI polling threads.
+        with self.connect_lock:
+            with self.lock:
+                if self.connected:
+                    return True
+                if self.loop is None:
+                    self.loop = asyncio.new_event_loop()
+                    self.thread = threading.Thread(target=self._loop_runner, daemon=True, name="metaapi-loop")
+                    self.thread.start()
+            try:
+                # If previous RPC/websocket objects exist after sleep/network drop, close first.
+                if self.connection is not None or self.api is not None:
+                    try:
+                        self._call(self._close_async(), timeout=12.0)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    self.connection = None
+                    self.account = None
+                    self.api = None
+                    self.symbol_specs = {}
+                return self._call(self._connect_async())
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.exception("MetaApi start failed: %s", exc)
+                self.connected = False
+                return False
 
     def stop(self) -> None:
         self.connected = False
