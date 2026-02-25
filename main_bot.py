@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import threading
+import time
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -20,8 +21,10 @@ from levels_detector import detect_levels
 from mt5_utils import (
     BrokerTimeoutError,
     cancel_all_pending,
+    cancel_all_pending_any,
     cancel_order,
     clear_position_take_profit,
+    close_all_positions_any,
     close_all_positions,
     close_position,
     connect_mt5,
@@ -370,6 +373,8 @@ class HedgingGridBot:
                 self._record_action(f"Restored pending {side} @ {level:.5f} after position close")
 
     def _sync_grid(self) -> None:
+        if self.stop_new_orders:
+            return
         tick = get_tick(self.symbol)
         if tick is None:
             return
@@ -397,6 +402,8 @@ class HedgingGridBot:
         current_bid = float(tick.bid)
         current_ask = float(tick.ask)
         for level in levels:
+            if self.stop_new_orders:
+                break
             if not self._active_position_exists("BUY", level, tolerance=tolerance):
                 if not self._pending_exists("BUY", level, tolerance=tolerance):
                     comment = f"GRID|BUY|{level:.5f}"
@@ -412,6 +419,8 @@ class HedgingGridBot:
                         current_ask=current_ask,
                     ):
                         self._record_action(f"Placed BUY pending @ {level:.5f}")
+            if self.stop_new_orders:
+                break
             if not self._active_position_exists("SELL", level, tolerance=tolerance):
                 if not self._pending_exists("SELL", level, tolerance=tolerance):
                     comment = f"GRID|SELL|{level:.5f}"
@@ -652,9 +661,17 @@ class HedgingGridBot:
     def manual_close_all(self) -> tuple[int, int]:
         """UI action: close all positions and cancel all pending."""
         ensure_connection(self.config.get("mt5", {}))
-        closed = close_all_positions(self.symbol, self.magic, deviation=self.deviation)
-        cancelled = cancel_all_pending(self.symbol, self.magic)
-        self._record_action(f"Manual Close All -> closed={closed}, cancelled={cancelled}")
+        # Freeze new order placement so the bot does not instantly recreate grid after manual flatten.
+        self.stop_new_orders = True
+        # First pass: close/cancel everything on current symbol regardless of magic/comment.
+        closed = close_all_positions_any(self.symbol, deviation=self.deviation)
+        cancelled = cancel_all_pending_any(self.symbol)
+        # Second pass: catch in-flight state changes (filled/cancelled/just created orders).
+        time.sleep(0.8)
+        closed += close_all_positions_any(self.symbol, deviation=self.deviation)
+        cancelled += cancel_all_pending_any(self.symbol)
+        self.position_registry.clear()
+        self._record_action(f"Manual Close All -> closed={closed}, cancelled={cancelled}, new_orders_paused=True")
         return closed, cancelled
 
     def manual_close_profitable(self, side: str) -> int:
@@ -690,8 +707,9 @@ class HedgingGridBot:
         ensure_connection(self.config.get("mt5", {}))
         cancelled = cancel_all_pending(self.symbol, self.magic)
         self.grid_anchor_price = None
+        self.stop_new_orders = False
         self._save_state()
-        self._record_action(f"Grid reset -> cancelled pending {cancelled}")
+        self._record_action(f"Grid reset -> cancelled pending {cancelled}, new_orders_paused=False")
         return cancelled
 
     def status(self) -> BotStatus:

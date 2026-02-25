@@ -72,6 +72,11 @@ Quick context file for new agents joining this project, so they can continue wit
 - Manual TP tools for open positions:
   - Apply BUY TP level to all open BUY positions
   - Apply SELL TP level to all open SELL positions
+- Manual flatten behavior:
+  - `Close All` now pauses new grid placements (`stop_new_orders=True`) to avoid immediate re-open.
+  - `Close All` closes/cancels all orders for bot symbol regardless of magic/comment and runs two passes.
+  - Grid sync loop now re-checks pause flag during placement pass to stop in-flight add-ons faster.
+  - `Reset Grid` resumes new order placement (`stop_new_orders=False`) and rebuilds anchor/pending.
 - Config editor panel (save + hot reload).
 - Recent bot action log panel and raw status payload expander.
 

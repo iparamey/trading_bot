@@ -89,7 +89,7 @@ def _render_positions() -> None:
             for p in positions
         ]
     )
-    st.dataframe(frame, use_container_width=True, hide_index=True)
+    st.dataframe(frame, width="stretch", hide_index=True)
 
 
 def _render_pending_orders() -> None:
@@ -123,7 +123,7 @@ def _render_pending_orders() -> None:
     sort_by = c1.selectbox("Sort pending by", options=["entry", "SL", "TP", "type", "volume", "ticket"], index=0)
     ascending = c2.toggle("Ascending sort", value=True)
     frame = frame.sort_values(by=sort_by, ascending=ascending, kind="stable")
-    st.dataframe(frame, use_container_width=True, hide_index=True)
+    st.dataframe(frame, width="stretch", hide_index=True)
 
 
 def _render_equity_chart() -> None:
@@ -139,7 +139,7 @@ def _render_equity_chart() -> None:
     fig.add_trace(go.Scatter(x=frame["time"], y=frame["balance"], mode="lines", name="Balance"))
     fig.add_trace(go.Scatter(x=frame["time"], y=frame["equity"], mode="lines", name="Equity"))
     fig.update_layout(margin=dict(l=10, r=10, t=30, b=10), height=350)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, config={"responsive": True})
 
 
 def _render_manual_controls() -> None:
@@ -148,16 +148,16 @@ def _render_manual_controls() -> None:
         st.info("Start the bot to use manual controls.")
         return
     c1, c2, c3, c4 = st.columns(4)
-    if c1.button("Close All", use_container_width=True):
+    if c1.button("Close All", width="stretch"):
         closed, cancelled = bot.manual_close_all()
         st.success(f"Closed positions: {closed}, cancelled pending: {cancelled}")
-    if c2.button("Close Profitable Buys", use_container_width=True):
+    if c2.button("Close Profitable Buys", width="stretch"):
         closed = bot.manual_close_profitable("BUY")
         st.success(f"Closed BUY positions: {closed}")
-    if c3.button("Close Profitable Sells", use_container_width=True):
+    if c3.button("Close Profitable Sells", width="stretch"):
         closed = bot.manual_close_profitable("SELL")
         st.success(f"Closed SELL positions: {closed}")
-    if c4.button("Reset Grid", use_container_width=True):
+    if c4.button("Reset Grid", width="stretch"):
         cancelled = bot.reset_grid()
         st.success(f"Cancelled pending orders: {cancelled}")
 
@@ -165,13 +165,13 @@ def _render_manual_controls() -> None:
     tp_c1, tp_c2, tp_c3, tp_c4 = st.columns(4)
     buy_tp = tp_c1.number_input("BUY TP price", min_value=0.0, value=0.0, step=0.0001, format="%.5f")
     sell_tp = tp_c2.number_input("SELL TP price", min_value=0.0, value=0.0, step=0.0001, format="%.5f")
-    if tp_c3.button("Apply BUY TP", use_container_width=True):
+    if tp_c3.button("Apply BUY TP", width="stretch"):
         if buy_tp <= 0:
             st.error("Set BUY TP price > 0")
         else:
             updated = bot.manual_set_take_profit("BUY", buy_tp)
             st.success(f"Updated BUY TP for positions: {updated}")
-    if tp_c4.button("Apply SELL TP", use_container_width=True):
+    if tp_c4.button("Apply SELL TP", width="stretch"):
         if sell_tp <= 0:
             st.error("Set SELL TP price > 0")
         else:
@@ -256,9 +256,9 @@ def main() -> None:
     st_autorefresh(interval=max(refresh_sec, 5) * 1000, key="dashboard_refresh")
 
     c1, c2 = st.columns(2)
-    if c1.button("Start Bot", use_container_width=True):
+    if c1.button("Start Bot", width="stretch"):
         _start_bot()
-    if c2.button("Stop Bot", use_container_width=True):
+    if c2.button("Stop Bot", width="stretch"):
         _stop_bot()
 
     _render_status()

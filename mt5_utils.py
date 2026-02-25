@@ -259,12 +259,12 @@ class _MetaApiBridge:
     def get_account_info(self) -> dict[str, Any] | None:
         if not self.ensure_connected():
             return None
-        return self._call(self.connection.get_account_information())
+        return self._call(self.connection.get_account_information(), timeout=8.0)
 
     def get_positions(self, symbol: str | None = None) -> list[dict[str, Any]]:
         if not self.ensure_connected():
             return []
-        items = self._call(self.connection.get_positions()) or []
+        items = self._call(self.connection.get_positions(), timeout=8.0) or []
         if not symbol:
             return list(items)
         return [p for p in items if str(_get(p, "symbol", default="")) == symbol]
@@ -272,7 +272,7 @@ class _MetaApiBridge:
     def get_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
         if not self.ensure_connected():
             return []
-        items = self._call(self.connection.get_orders()) or []
+        items = self._call(self.connection.get_orders(), timeout=8.0) or []
         if not symbol:
             return list(items)
         return [o for o in items if str(_get(o, "symbol", default="")) == symbol]
@@ -280,14 +280,14 @@ class _MetaApiBridge:
     def get_symbol_price(self, symbol: str) -> dict[str, Any] | None:
         if not self.ensure_connected():
             return None
-        return self._call(self.connection.get_symbol_price(symbol=symbol))
+        return self._call(self.connection.get_symbol_price(symbol=symbol), timeout=8.0)
 
     def get_symbol_spec(self, symbol: str) -> dict[str, Any] | None:
         if symbol in self.symbol_specs:
             return self.symbol_specs[symbol]
         if not self.ensure_connected():
             return None
-        spec = self._call(self.connection.get_symbol_specification(symbol=symbol))
+        spec = self._call(self.connection.get_symbol_specification(symbol=symbol), timeout=10.0)
         if spec:
             self.symbol_specs[symbol] = spec
         return spec
@@ -386,12 +386,21 @@ class _MetaApiBridge:
     def close_position(self, position_ticket: int) -> bool:
         if not self.ensure_connected():
             return False
-        try:
-            result = self._call(self.connection.close_position(position_id=str(position_ticket)))
-            return str(_get(result, "stringCode", default="")).upper() in {"OK", "TRADE_RETCODE_DONE"}
-        except Exception as exc:  # noqa: BLE001
-            LOGGER.warning("Failed to close position %s: %s", position_ticket, exc)
-            return False
+        for attempt in range(1, 4):
+            try:
+                result = self._call(self.connection.close_position(position_id=str(position_ticket)), timeout=12.0)
+                return str(_get(result, "stringCode", default="")).upper() in {"OK", "TRADE_RETCODE_DONE"}
+            except Exception as exc:  # noqa: BLE001
+                err = str(exc).lower()
+                if "not found" in err:
+                    # Already closed by broker/market - treat as successful outcome.
+                    return True
+                if "cpu credits" in err and attempt < 3:
+                    time.sleep(0.6 * attempt)
+                    continue
+                LOGGER.warning("Failed to close position %s: %s", position_ticket, exc)
+                return False
+        return False
 
     def modify_position_tp(self, position_ticket: int, tp_price: float | None) -> bool:
         """Set/replace TP for an existing open position, or clear it when None."""
@@ -403,7 +412,8 @@ class _MetaApiBridge:
                     position_id=str(position_ticket),
                     stop_loss=None,
                     take_profit=tp_price,
-                )
+                ),
+                timeout=12.0,
             )
             return str(_get(result, "stringCode", default="")).upper() in {"OK", "TRADE_RETCODE_DONE"}
         except Exception as exc:  # noqa: BLE001
@@ -413,12 +423,21 @@ class _MetaApiBridge:
     def cancel_order(self, order_ticket: int) -> bool:
         if not self.ensure_connected():
             return False
-        try:
-            result = self._call(self.connection.cancel_order(order_id=str(order_ticket)))
-            return str(_get(result, "stringCode", default="")).upper() in {"OK", "TRADE_RETCODE_DONE"}
-        except Exception as exc:  # noqa: BLE001
-            LOGGER.warning("Failed to cancel order %s: %s", order_ticket, exc)
-            return False
+        for attempt in range(1, 4):
+            try:
+                result = self._call(self.connection.cancel_order(order_id=str(order_ticket)), timeout=12.0)
+                return str(_get(result, "stringCode", default="")).upper() in {"OK", "TRADE_RETCODE_DONE"}
+            except Exception as exc:  # noqa: BLE001
+                err = str(exc).lower()
+                if "not found" in err:
+                    # Already cancelled/filled at broker side.
+                    return True
+                if ("cpu credits" in err or "frozen" in err) and attempt < 3:
+                    time.sleep(0.6 * attempt)
+                    continue
+                LOGGER.warning("Failed to cancel order %s: %s", order_ticket, exc)
+                return False
+        return False
 
     def get_historical_candles(self, symbol: str, timeframe: str, limit: int) -> list[dict[str, Any]]:
         if not self.ensure_connected():
@@ -540,7 +559,14 @@ def get_account_info() -> AccountView | None:
     bridge = _bridge()
     if bridge is None:
         return None
-    account = bridge.get_account_info()
+    try:
+        account = bridge.get_account_info()
+    except BrokerTimeoutError:
+        # UI/status callers should not crash on transient broker latency spikes.
+        return None
+    except Exception as exc:  # noqa: BLE001
+        LOGGER.warning("Failed to read account info: %s", exc)
+        return None
     if not account:
         return None
     return AccountView(
@@ -800,6 +826,24 @@ def close_all_positions(symbol: str, magic: int, deviation: int) -> int:
     """Close all bot positions and return count of successful closes."""
     closed = 0
     for pos in get_positions(symbol=symbol, magic=magic):
+        if close_position(pos.ticket, deviation=deviation):
+            closed += 1
+    return closed
+
+
+def cancel_all_pending_any(symbol: str | None = None) -> int:
+    """Cancel all pending orders for symbol regardless of magic/comment."""
+    cancelled = 0
+    for order in get_pending_orders(symbol=symbol, magic=None):
+        if cancel_order(order.ticket):
+            cancelled += 1
+    return cancelled
+
+
+def close_all_positions_any(symbol: str | None = None, deviation: int = 20) -> int:
+    """Close all open positions for symbol regardless of magic/comment."""
+    closed = 0
+    for pos in get_positions(symbol=symbol, magic=None):
         if close_position(pos.ticket, deviation=deviation):
             closed += 1
     return closed
