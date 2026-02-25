@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local runtime/state
+bot.log
+bot.log.*
+bot_state.json
+
+# Secrets/local config
+config.yaml
+.env
+.env.*
+
+# macOS
+.DS_Store

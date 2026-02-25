@@ -1,0 +1,7 @@
+metaapi-cloud-sdk
+streamlit
+streamlit-autorefresh
+pandas
+plotly
+PyYAML
+numpy

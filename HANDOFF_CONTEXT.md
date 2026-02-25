@@ -1,0 +1,91 @@
+# Trading Bot Handoff Context
+
+## Purpose
+Quick context file for new agents joining this project, so they can continue without re-reading long chat history.
+
+## Current Stack
+- Runtime: Python 3.9
+- Broker bridge: `metaapi-cloud-sdk` (macOS-compatible, no native `MetaTrader5` package)
+- UI: Streamlit (`dashboard.py`)
+- Core loop: `main_bot.py`
+- Broker adapter/utilities: `mt5_utils.py`
+- Auto levels: `levels_detector.py`
+
+## High-Level Bot Behavior
+- Grid bot with pending orders around an anchor price.
+- Grid step uses `grid_step_points` (preferred over `grid_step_pips`).
+- Anchor is persisted in `bot_state.json`.
+- On restart, anchor restore order:
+  1) from `bot_state.json`,
+  2) from existing pending orders,
+  3) from current market price.
+- Dynamic recenter is enabled:
+  - if price drift from anchor exceeds threshold, anchor is moved and out-of-window pending can be canceled.
+
+## Key Configuration (current direction)
+- `grid.grid_step_points`: 200
+- `grid.grid_levels_each_side`: 15
+- `grid.dynamic_recenter_enabled`: true
+- `grid.recenter_threshold_points`: 150
+- `grid.cancel_outside_on_recenter`: true
+- `risk.fixed_lot`: 0.05
+
+## Pending Order Logic (latest)
+- Bot now tries to place both BUY and SELL pending on each grid level.
+- Pending type is chosen automatically:
+  - BUY below market -> BUY LIMIT
+  - BUY above market -> BUY STOP
+  - SELL above market -> SELL LIMIT
+  - SELL below market -> SELL STOP
+- If an active position already exists on the same level+side, pending is not re-added until that position is closed.
+
+## Closing Logic (latest)
+- Level-based selective close exists.
+- Auto levels are built from D1 fractals + pivots.
+- Auto-level spacing is linked to grid step:
+  - `min_distance_pips = (grid_step_points * levels.level_spacing_multiplier) / 10`
+- Breakout buffer is enabled before level close:
+  - `buffer = grid_step_price * closing.level_break_buffer_multiplier`
+  - BUY close when `bid >= level + buffer`
+  - SELL close when `ask <= level - buffer`
+
+## UI Features Added
+- Start/Stop bot in background thread.
+- Open positions table.
+- Pending orders table with sorting.
+- Equity/balance chart.
+- Manual controls:
+  - Close All
+  - Close Profitable Buys/Sells
+  - Reset Grid
+- Manual TP tools for open positions:
+  - Apply BUY TP level to all open BUY positions
+  - Apply SELL TP level to all open SELL positions
+
+## Reliability Fixes Already Applied
+- MetaApi `comment + clientId` validation issue resolved by shortening/removing `clientId` usage.
+- Magic filtering fallback added using `GRID|...` comments for consistency across MetaApi payloads.
+- Added handling for broker RPC timeouts:
+  - `BrokerTimeoutError` in `mt5_utils.py`
+  - auto reconnect path in `main_bot.py`
+- Added more graceful connection shutdown logic to reduce leaked subscriptions.
+- Reduced noisy third-party logs in `setup_logging()`.
+- Fixed Streamlit auto-refresh via `streamlit-autorefresh`.
+
+## Known Operational Risk
+- MetaApi may return 429 `TooManyRequestsException` when subscription quota is exhausted.
+- Recovery expectation:
+  - stop all running bot instances,
+  - wait briefly,
+  - run a single instance.
+
+## Data/Logging Status
+- `bot.log` and `bot.log.1` contain runtime events.
+- No dedicated structured trade journal yet (reason-per-close not persisted to CSV/database).
+
+## Suggested Next Improvements
+1) Add structured `trade_journal.csv` with close reason (`level/imbalance/manual/dd/tp`).
+2) Show anchor/drift/recenter diagnostics in UI status.
+3) Add stricter anti-duplicate order send guard per cycle.
+4) Add optional trend-side TP mode (deferred by user for separate discussion).
+
