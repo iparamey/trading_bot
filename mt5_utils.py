@@ -194,6 +194,10 @@ class _MetaApiBridge:
         login = str(self.cfg.get("login", "")).strip()
         password = str(self.cfg.get("password", "")).strip()
         server = str(self.cfg.get("server", "")).strip()
+        platform = str(self.cfg.get("platform", "mt5")).strip().lower()
+        if platform not in {"mt4", "mt5"}:
+            LOGGER.warning("Unsupported mt5.platform=%r, fallback to 'mt5'", platform)
+            platform = "mt5"
 
         if not token:
             LOGGER.error("Set mt5.metaapi_token in config.yaml")
@@ -220,7 +224,7 @@ class _MetaApiBridge:
                         "login": login,
                         "password": password,
                         "server": server,
-                        "platform": "mt5",
+                        "platform": platform,
                         "magic": _to_int(self.cfg.get("magic", 900001), 900001),
                         "reliability": "regular",
                     }

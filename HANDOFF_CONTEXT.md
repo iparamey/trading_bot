@@ -6,6 +6,7 @@ Quick context file for new agents joining this project, so they can continue wit
 ## Current Stack
 - Runtime: Python 3.9
 - Broker bridge: `metaapi-cloud-sdk` (macOS-compatible, no native `MetaTrader5` package)
+- Platform support via MetaApi: MT5 and MT4 (`mt5.platform` in config).
 - UI: Streamlit (`dashboard.py`)
 - Core loop: `main_bot.py`
 - Broker adapter/utilities: `mt5_utils.py`
