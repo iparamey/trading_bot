@@ -65,12 +65,17 @@ class BotStatus:
     last_action: str
 
 
-def setup_logging(log_file: str, level_name: str = "INFO") -> None:
+def setup_logging(log_file: str | Path, level_name: str = "INFO", base_dir: Path | None = None) -> Path:
     """Configure console + rotating file logging."""
+    log_path = Path(log_file)
+    if not log_path.is_absolute() and base_dir is not None:
+        log_path = base_dir / log_path
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
     level = getattr(logging, level_name.upper(), logging.INFO)
     formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 
-    file_handler = RotatingFileHandler(log_file, maxBytes=2_000_000, backupCount=5)
+    file_handler = RotatingFileHandler(log_path, maxBytes=2_000_000, backupCount=5)
     file_handler.setFormatter(formatter)
     file_handler.setLevel(level)
 
@@ -95,6 +100,7 @@ def setup_logging(log_file: str, level_name: str = "INFO") -> None:
     for name in noisy_loggers:
         ext_logger = logging.getLogger(name)
         ext_logger.setLevel(logging.WARNING)
+    return log_path
 
 
 def load_config(config_path: str | Path) -> dict[str, Any]:
@@ -136,7 +142,20 @@ class HedgingGridBot:
         self.config: dict[str, Any] = load_config(self.config_path)
 
         log_cfg = self.config.get("logging", {})
-        setup_logging(log_cfg.get("file", "bot.log"), log_cfg.get("level", "INFO"))
+        self.runtime_log_path = setup_logging(
+            log_cfg.get("file", "logs/bot.log"),
+            log_cfg.get("level", "INFO"),
+            base_dir=self.config_path.parent,
+        )
+        self.structured_logging_enabled = bool(log_cfg.get("structured_enabled", True))
+        self.order_actions_log_path = Path(log_cfg.get("order_actions_file", "logs/order_actions.jsonl"))
+        self.critical_errors_log_path = Path(log_cfg.get("critical_errors_file", "logs/critical_errors.jsonl"))
+        if not self.order_actions_log_path.is_absolute():
+            self.order_actions_log_path = self.config_path.parent / self.order_actions_log_path
+        if not self.critical_errors_log_path.is_absolute():
+            self.critical_errors_log_path = self.config_path.parent / self.critical_errors_log_path
+        self.order_actions_log_path.parent.mkdir(parents=True, exist_ok=True)
+        self.critical_errors_log_path.parent.mkdir(parents=True, exist_ok=True)
 
         self.stop_event = threading.Event()
         self.running = False
@@ -157,6 +176,8 @@ class HedgingGridBot:
         self.action_logs: deque[str] = deque(maxlen=400)
         self._last_action = "Idle"
         self._last_tp_sync_at: datetime | None = None
+        self._reconnect_fail_count: int = 0
+        self._placed_this_cycle: set[tuple[str, float]] = set()
         self._load_state()
 
     @property
@@ -190,6 +211,39 @@ class HedgingGridBot:
         self.action_logs.appendleft(line)
         self._last_action = message
         LOGGER.log(level, message)
+
+    def _append_jsonl(self, path: Path, payload: dict[str, Any]) -> None:
+        """Append one JSON event per line to local structured logs."""
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as file:
+                file.write(json.dumps(payload, ensure_ascii=True) + "\n")
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("Failed to write structured log %s: %s", path, exc)
+
+    def _log_order_event(self, event: str, **fields: Any) -> None:
+        if not self.structured_logging_enabled:
+            return
+        payload: dict[str, Any] = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "event": event,
+            "symbol": self.symbol,
+        }
+        payload.update(fields)
+        self._append_jsonl(self.order_actions_log_path, payload)
+
+    def _log_critical_event(self, event: str, error: Any | None = None, **fields: Any) -> None:
+        if not self.structured_logging_enabled:
+            return
+        payload: dict[str, Any] = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "event": event,
+            "symbol": self.symbol,
+        }
+        if error is not None:
+            payload["error"] = str(error)
+        payload.update(fields)
+        self._append_jsonl(self.critical_errors_log_path, payload)
 
     def _load_state(self) -> None:
         """Load persisted bot state from disk (if exists)."""
@@ -249,7 +303,7 @@ class HedgingGridBot:
         levels_each_side = int(grid_cfg.get("grid_levels_each_side", 6))
         step = self._grid_step_price()
 
-        levels: list[float] = []
+        levels: list[float] = [normalize_price(self.symbol, anchor_price)]
         for i in range(1, levels_each_side + 1):
             levels.append(normalize_price(self.symbol, anchor_price + i * step))
             levels.append(normalize_price(self.symbol, anchor_price - i * step))
@@ -274,6 +328,29 @@ class HedgingGridBot:
                 continue
             if cancel_order(order.ticket):
                 cancelled += 1
+        return cancelled
+
+    def _prune_duplicate_pending(self) -> int:
+        """Cancel duplicate pending orders at the same level+side, keep one per level."""
+        tolerance = pips_to_price(self.symbol, 0.5)
+        pending = get_pending_orders(symbol=self.symbol, magic=self.magic)
+        groups: list[list[Any]] = []
+        for order in pending:
+            placed = False
+            for group in groups:
+                first = group[0]
+                if first.side == order.side and abs(first.price_open - order.price_open) <= tolerance:
+                    group.append(order)
+                    placed = True
+                    break
+            if not placed:
+                groups.append([order])
+        cancelled = 0
+        for group in groups:
+            for order in group[1:]:
+                if cancel_order(order.ticket):
+                    cancelled += 1
+                    self._record_action(f"Cancelled duplicate pending {order.side} @ {order.price_open:.5f}")
         return cancelled
 
     def _maybe_recenter_grid(self, mid_price: float) -> None:
@@ -318,22 +395,69 @@ class HedgingGridBot:
             return normalize_price(self.symbol, buy_levels[-1] + step)
         return None
 
-    def _pending_exists(self, side: str, level: float, tolerance: float) -> bool:
-        for order in get_pending_orders(symbol=self.symbol, magic=self.magic):
+    def _pending_exists(
+        self,
+        side: str,
+        level: float,
+        tolerance: float,
+        pending_cache: list[Any] | None = None,
+        placed_this_cycle: set[tuple[str, float]] | None = None,
+    ) -> bool:
+        if placed_this_cycle is not None:
+            for s, lvl in placed_this_cycle:
+                if s == side and abs(lvl - level) <= tolerance:
+                    return True
+        orders = pending_cache if pending_cache is not None else get_pending_orders(symbol=self.symbol, magic=self.magic)
+        for order in orders:
             if order.side != side:
                 continue
             if abs(order.price_open - level) <= tolerance:
                 return True
         return False
 
-    def _active_position_exists(self, side: str, level: float, tolerance: float) -> bool:
+    def _active_position_exists(
+        self,
+        side: str,
+        level: float,
+        tolerance: float,
+        positions_cache: list[Any] | None = None,
+    ) -> bool:
         """Check whether an active position already occupies this grid level."""
-        for pos in get_positions(symbol=self.symbol, magic=self.magic):
+        step = self._grid_step_price()
+        positions = positions_cache if positions_cache is not None else get_positions(symbol=self.symbol, magic=self.magic)
+        for pos in positions:
             if pos.side != side:
                 continue
+            parsed = _parse_grid_comment(pos.comment)
+            if parsed and parsed[0] == side and abs(parsed[1] - level) <= tolerance:
+                return True
+            if step > 0:
+                inferred = normalize_price(self.symbol, round(pos.price_open / step) * step)
+                if abs(inferred - level) <= tolerance:
+                    return True
             if abs(pos.price_open - level) <= tolerance:
                 return True
         return False
+
+    def _sticky_levels_from_positions(self) -> set[float]:
+        """Collect levels that must stay in-grid while related positions are open."""
+        sticky: set[float] = set()
+        step = self._grid_step_price()
+
+        for _, level in self.position_registry.values():
+            sticky.add(normalize_price(self.symbol, level))
+
+        for pos in get_positions(symbol=self.symbol, magic=self.magic):
+            parsed = _parse_grid_comment(pos.comment)
+            if parsed:
+                sticky.add(normalize_price(self.symbol, parsed[1]))
+                continue
+            if step > 0:
+                inferred = normalize_price(self.symbol, round(pos.price_open / step) * step)
+                sticky.add(inferred)
+            else:
+                sticky.add(normalize_price(self.symbol, pos.price_open))
+        return sticky
 
     def _track_positions(self) -> None:
         current = get_positions(symbol=self.symbol, magic=self.magic)
@@ -370,7 +494,15 @@ class HedgingGridBot:
                 current_ask=float(tick.ask),
             )
             if ok:
+                self._placed_this_cycle.add((side, normalize_price(self.symbol, level)))
                 self._record_action(f"Restored pending {side} @ {level:.5f} after position close")
+            self._log_order_event(
+                "restore_pending_after_position_close",
+                side=side,
+                level=level,
+                ticket=ticket,
+                result=bool(ok),
+            )
 
     def _sync_grid(self) -> None:
         if self.stop_new_orders:
@@ -378,6 +510,9 @@ class HedgingGridBot:
         tick = get_tick(self.symbol)
         if tick is None:
             return
+        dup_cancelled = self._prune_duplicate_pending()
+        if dup_cancelled:
+            self._record_action(f"Pruned {dup_cancelled} duplicate pending order(s)")
         mid_price = (float(tick.bid) + float(tick.ask)) / 2.0
         if self.grid_anchor_price is None:
             restored_anchor = self._restore_anchor_from_pending()
@@ -392,7 +527,8 @@ class HedgingGridBot:
             self._save_state()
         else:
             self._maybe_recenter_grid(mid_price)
-        levels = self._grid_levels(self.grid_anchor_price)
+        levels = set(self._grid_levels(self.grid_anchor_price))
+        levels.update(self._sticky_levels_from_positions())
         account = get_account_info()
         if account is None:
             return
@@ -401,13 +537,17 @@ class HedgingGridBot:
         tolerance = pips_to_price(self.symbol, 0.5)
         current_bid = float(tick.bid)
         current_ask = float(tick.ask)
-        for level in levels:
+        positions_cache = get_positions(symbol=self.symbol, magic=self.magic)
+        pending_cache = get_pending_orders(symbol=self.symbol, magic=self.magic)
+        for level in sorted(levels):
             if self.stop_new_orders:
                 break
-            if not self._active_position_exists("BUY", level, tolerance=tolerance):
-                if not self._pending_exists("BUY", level, tolerance=tolerance):
+            if not self._active_position_exists("BUY", level, tolerance=tolerance, positions_cache=positions_cache):
+                if not self._pending_exists(
+                    "BUY", level, tolerance=tolerance, pending_cache=pending_cache, placed_this_cycle=self._placed_this_cycle
+                ):
                     comment = f"GRID|BUY|{level:.5f}"
-                    if place_pending_order(
+                    placed = place_pending_order(
                         symbol=self.symbol,
                         side="BUY",
                         volume=lot,
@@ -417,14 +557,19 @@ class HedgingGridBot:
                         comment=comment,
                         current_bid=current_bid,
                         current_ask=current_ask,
-                    ):
+                    )
+                    if placed:
+                        self._placed_this_cycle.add(("BUY", normalize_price(self.symbol, level)))
                         self._record_action(f"Placed BUY pending @ {level:.5f}")
+                    self._log_order_event("sync_place_pending", side="BUY", level=level, result=bool(placed))
             if self.stop_new_orders:
                 break
-            if not self._active_position_exists("SELL", level, tolerance=tolerance):
-                if not self._pending_exists("SELL", level, tolerance=tolerance):
+            if not self._active_position_exists("SELL", level, tolerance=tolerance, positions_cache=positions_cache):
+                if not self._pending_exists(
+                    "SELL", level, tolerance=tolerance, pending_cache=pending_cache, placed_this_cycle=self._placed_this_cycle
+                ):
                     comment = f"GRID|SELL|{level:.5f}"
-                    if place_pending_order(
+                    placed = place_pending_order(
                         symbol=self.symbol,
                         side="SELL",
                         volume=lot,
@@ -434,8 +579,11 @@ class HedgingGridBot:
                         comment=comment,
                         current_bid=current_bid,
                         current_ask=current_ask,
-                    ):
+                    )
+                    if placed:
+                        self._placed_this_cycle.add(("SELL", normalize_price(self.symbol, level)))
                         self._record_action(f"Placed SELL pending @ {level:.5f}")
+                    self._log_order_event("sync_place_pending", side="SELL", level=level, result=bool(placed))
 
     def _refresh_auto_levels(self) -> None:
         enabled = bool(self.config.get("levels", {}).get("auto_levels_enabled", True))
@@ -501,6 +649,7 @@ class HedgingGridBot:
         for ticket in close_candidates:
             if close_position(ticket, deviation=self.deviation):
                 closed += 1
+                self._log_order_event("level_based_close", ticket=ticket, result=True)
         if closed:
             self._record_action(f"Closed by level logic: {closed} positions")
         return closed
@@ -557,6 +706,12 @@ class HedgingGridBot:
                 if clear_disallowed and pos.tp > 0:
                     if clear_position_take_profit(pos.ticket):
                         cleared += 1
+                        self._log_order_event(
+                            "auto_tp_clear_disallowed",
+                            side=pos.side,
+                            ticket=pos.ticket,
+                            result=True,
+                        )
                     if updated + cleared >= max_updates:
                         break
                 continue
@@ -575,6 +730,13 @@ class HedgingGridBot:
                 continue
             if set_position_take_profit(pos.ticket, pos.symbol, tp_level):
                 updated += 1
+                self._log_order_event(
+                    "auto_tp_set",
+                    side=pos.side,
+                    ticket=pos.ticket,
+                    tp=tp_level,
+                    result=True,
+                )
             if updated + cleared >= max_updates:
                 break
 
@@ -603,26 +765,6 @@ class HedgingGridBot:
         overloaded_side = "BUY" if count_imbalance > 0 else "SELL" if count_imbalance < 0 else None
         return self.current_imbalance, overloaded_side
 
-    def _imbalance_close_priority(self, max_count: int) -> int:
-        imbalance, overloaded = self._imbalance_values()
-        threshold = float(self.config.get("closing", {}).get("imbalance_threshold", 5))
-        if overloaded is None or abs(imbalance) <= threshold:
-            return 0
-
-        candidates = sorted(
-            profitable_positions(get_positions(symbol=self.symbol, magic=self.magic), side=overloaded),
-            key=lambda p: p.profit,
-            reverse=True,
-        )
-        closed = 0
-        for pos in candidates[:max_count]:
-            if close_position(pos.ticket, deviation=self.deviation):
-                closed += 1
-
-        if closed:
-            self._record_action(f"Imbalance priority close: {closed} {overloaded} positions")
-        return closed
-
     def _risk_guard(self) -> None:
         account = get_account_info()
         if account is None:
@@ -645,6 +787,7 @@ class HedgingGridBot:
                 closed = close_all_positions(self.symbol, self.magic, deviation=self.deviation)
                 cancelled = cancel_all_pending(self.symbol, self.magic)
                 self._record_action(f"DD action -> closed={closed}, cancelled_pending={cancelled}", level=logging.WARNING)
+                self._log_order_event("dd_close_all", closed=closed, cancelled=cancelled, result=True)
 
     def _append_equity_point(self) -> None:
         account = get_account_info()
@@ -672,6 +815,7 @@ class HedgingGridBot:
         cancelled += cancel_all_pending_any(self.symbol)
         self.position_registry.clear()
         self._record_action(f"Manual Close All -> closed={closed}, cancelled={cancelled}, new_orders_paused=True")
+        self._log_order_event("manual_close_all", closed=closed, cancelled=cancelled, result=True)
         return closed, cancelled
 
     def manual_close_profitable(self, side: str) -> int:
@@ -684,6 +828,12 @@ class HedgingGridBot:
         for pos in profitable_positions(get_positions(symbol=self.symbol, magic=self.magic), side=side_upper):
             if close_position(pos.ticket, deviation=self.deviation):
                 closed += 1
+                self._log_order_event(
+                    "manual_close_profitable",
+                    side=side_upper,
+                    ticket=pos.ticket,
+                    result=True,
+                )
         self._record_action(f"Manual close profitable {side_upper}: {closed}")
         return closed
 
@@ -699,6 +849,13 @@ class HedgingGridBot:
                 continue
             if set_position_take_profit(pos.ticket, pos.symbol, tp_price):
                 updated += 1
+                self._log_order_event(
+                    "manual_set_tp",
+                    side=side_upper,
+                    ticket=pos.ticket,
+                    tp=normalize_price(self.symbol, tp_price),
+                    result=True,
+                )
         self._record_action(f"Set TP {tp_price:.5f} for {side_upper} positions: {updated}")
         return updated
 
@@ -710,6 +867,7 @@ class HedgingGridBot:
         self.stop_new_orders = False
         self._save_state()
         self._record_action(f"Grid reset -> cancelled pending {cancelled}, new_orders_paused=False")
+        self._log_order_event("reset_grid", cancelled=cancelled, result=True)
         return cancelled
 
     def status(self) -> BotStatus:
@@ -738,12 +896,40 @@ class HedgingGridBot:
         """Return recent action log lines."""
         return list(self.action_logs)[:limit]
 
+    def _reconnect_backoff_sec(self) -> float:
+        """Exponential backoff for reconnect retries (5s base, 120s cap)."""
+        base = 5.0
+        cap = 120.0
+        delay = min(base * (2**self._reconnect_fail_count), cap)
+        return max(delay, self.poll_interval)
+
+    def _is_network_error(self, exc: BaseException) -> bool:
+        """Detect network/DNS errors that warrant reconnect + backoff."""
+        chain: list[BaseException] = [exc]
+        tail = exc
+        while True:
+            cause = getattr(tail, "__cause__", None) or getattr(tail, "__context__", None)
+            if cause is None or cause in chain:
+                break
+            chain.append(cause)
+            tail = cause
+        for e in chain:
+            err_str = str(e).lower()
+            if any(x in err_str for x in ("nodename nor servname", "connection", "connect", "timeout", "network", "dns")):
+                return True
+            if type(e).__name__ in ("ApiException", "ConnectError", "ConnectionError", "BrokerTimeoutError"):
+                return True
+            if isinstance(e, (ConnectionError, OSError)):
+                return True
+        return False
+
     async def run_async(self) -> None:
         """Main async control loop."""
         self.running = True
         mt5_cfg = self.config.get("mt5", {})
         if not connect_mt5(mt5_cfg):
             self._record_action("Unable to connect MT5. Bot stopped.", level=logging.ERROR)
+            self._log_critical_event("startup_connect_failed")
             self.running = False
             return
 
@@ -754,18 +940,26 @@ class HedgingGridBot:
         while not self.stop_event.is_set():
             try:
                 if not ensure_connection(mt5_cfg):
-                    self._record_action("Reconnect failed. Retrying...", level=logging.WARNING)
-                    await asyncio.sleep(max(self.poll_interval, 2))
+                    self._reconnect_fail_count += 1
+                    backoff = self._reconnect_backoff_sec()
+                    self._record_action(
+                        f"Reconnect failed (attempt {self._reconnect_fail_count}). Retry in {backoff:.0f}s...",
+                        level=logging.WARNING,
+                    )
+                    self._log_critical_event("reconnect_failed", attempt=self._reconnect_fail_count, backoff_sec=backoff)
+                    await asyncio.sleep(backoff)
                     continue
 
+                self._reconnect_fail_count = 0
+                self._placed_this_cycle.clear()
                 self._risk_guard()
                 self._refresh_auto_levels()
                 self._track_positions()
                 self._auto_assign_take_profits()
+                self._imbalance_values()  # update status.current_imbalance for dashboard
 
-                max_closes = int(self.config.get("closing", {}).get("max_closes_per_cycle", 3))
-                self._imbalance_close_priority(max_count=max_closes)
                 if not bool(self.config.get("closing", {}).get("auto_tp_enabled", True)):
+                    max_closes = int(self.config.get("closing", {}).get("max_closes_per_cycle", 3))
                     self._level_based_close(max_count=max_closes)
 
                 if not self.stop_new_orders:
@@ -773,13 +967,31 @@ class HedgingGridBot:
 
                 self._append_equity_point()
             except BrokerTimeoutError as exc:
-                self._record_action(f"Broker timeout detected: {exc}. Reconnecting...", level=logging.WARNING)
+                self._reconnect_fail_count += 1
+                backoff = self._reconnect_backoff_sec()
+                self._record_action(
+                    f"Broker timeout: {exc}. Reconnecting in {backoff:.0f}s...",
+                    level=logging.WARNING,
+                )
+                self._log_critical_event("broker_timeout", error=exc, backoff_sec=backoff)
                 ensure_connection(mt5_cfg)
-                await asyncio.sleep(max(self.poll_interval, 2))
+                await asyncio.sleep(backoff)
                 continue
             except Exception as exc:  # noqa: BLE001
+                if self._is_network_error(exc):
+                    self._reconnect_fail_count += 1
+                    backoff = self._reconnect_backoff_sec()
+                    self._record_action(
+                        f"Network error: {exc}. Reconnecting in {backoff:.0f}s...",
+                        level=logging.WARNING,
+                    )
+                    self._log_critical_event("network_error", error=exc, backoff_sec=backoff)
+                    ensure_connection(mt5_cfg)
+                    await asyncio.sleep(backoff)
+                    continue
                 LOGGER.exception("Cycle error: %s", exc)
                 self._record_action(f"Cycle error: {exc}", level=logging.ERROR)
+                self._log_critical_event("cycle_exception", error=exc)
             await asyncio.sleep(max(self.poll_interval, 1))
 
         shutdown_mt5()

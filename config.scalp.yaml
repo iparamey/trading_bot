@@ -1,0 +1,10 @@
+# Profile overlay (scalp / high-frequency polling)
+# Copy these sections into `config.yaml` when switching mode.
+
+trading:
+  poll_interval_sec: 5
+  dashboard_refresh_sec: 15
+
+closing:
+  tp_sync_interval_sec: 15.0
+  tp_max_updates_per_cycle: 30

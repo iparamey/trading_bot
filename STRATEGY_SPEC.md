@@ -18,8 +18,7 @@ Use this document as the single source of truth when replicating the strategy in
   3) Refresh auto levels (hourly)
   4) Track/restore positions-to-pending mapping
   5) Auto-TP synchronization
-  6) Imbalance close priority
-  7) Optional legacy level-based close (only when auto-TP is disabled)
+  6) Optional legacy level-based close (only when auto-TP is disabled)
   8) Grid sync (place missing pending orders) unless new orders are paused
   9) Append equity point
 
@@ -69,9 +68,10 @@ Anchor source priority:
 3) current market mid rounded to nearest grid step.
 
 ### Grid Levels
-For each `i in [1..grid_levels_each_side]`:
-- `anchor + i * step`
-- `anchor - i * step`
+- `anchor` (center level)
+- For each `i in [1..grid_levels_each_side]`:
+  - `anchor + i * step`
+  - `anchor - i * step`
 Deduplicated and sorted.
 
 ### Recenter Rule
@@ -112,7 +112,6 @@ If enabled and `abs(mid - anchor) >= recenter_threshold`:
 
 ## Legacy Close Logic (Fallback)
 Only active when `closing.auto_tp_enabled = false`.
-- `imbalance_close_priority`: closes profitable positions on overloaded side.
 - `level_based_close`: closes profitable positions after level breakout with buffer.
 
 ## Manual Controls Semantics
@@ -142,7 +141,6 @@ loop every poll_interval:
   refresh_auto_levels_if_due()
   track_positions_and_restore_pending()
   auto_assign_take_profits()
-  imbalance_close_priority()
   if not auto_tp_enabled:
     level_based_close()
   if not stop_new_orders:

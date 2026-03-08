@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -14,10 +15,103 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
 from main_bot import HedgingGridBot, load_config, save_config
-from mt5_utils import get_pending_orders, get_positions
+from mt5_utils import ensure_connection, get_deals_history, get_pending_orders, get_positions
 
 
 CONFIG_PATH = Path("config.yaml")
+
+
+def _deal_time_utc(deal: Any) -> datetime | None:
+    """Best-effort parse of MetaApi deal execution timestamp."""
+    raw = None
+    if isinstance(deal, dict):
+        raw = deal.get("time") or deal.get("updateTime") or deal.get("brokerTime")
+    if raw is None:
+        return None
+    if isinstance(raw, (int, float)):
+        ts = float(raw)
+        if ts > 1e12:  # milliseconds -> seconds
+            ts = ts / 1000.0
+        if ts <= 0:
+            return None
+        return datetime.fromtimestamp(ts, tz=timezone.utc)
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return None
+        # MetaApi often returns RFC3339 with trailing Z.
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            parsed = datetime.fromisoformat(text)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    return None
+
+
+def _render_executed_deals() -> None:
+    bot = st.session_state.bot
+    if bot is None:
+        st.info("Start the bot to view executed deals.")
+        return
+    if not bot.running:
+        st.info("Bot is stopped. Start it to fetch executed deals.")
+        return
+
+    ensure_connection(bot.config.get("mt5", {}))
+    c1, c2, c3 = st.columns(3)
+    lookback_days = int(c1.number_input("Executed deals lookback (days)", min_value=1, max_value=365, value=7, step=1))
+    ascending = c2.toggle("Ascending execution time", value=False)
+    bot_deals_only = c3.toggle("Bot deals only (magic/GRID)", value=True)
+
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=lookback_days)
+    raw_deals = list(get_deals_history(start, end, symbol=bot.symbol))
+
+    rows: list[dict[str, Any]] = []
+    for deal in raw_deals:
+        if not isinstance(deal, dict):
+            continue
+        comment = str(deal.get("comment") or "")
+        d_magic = int(deal.get("magic", bot.magic) or bot.magic)
+        if bot_deals_only and d_magic != bot.magic and not comment.startswith("GRID|"):
+            continue
+
+        exec_time = _deal_time_utc(deal)
+        entry = str(deal.get("entryType") or deal.get("entry") or "").upper()
+        side = str(deal.get("type") or "").upper()
+        price = float(deal.get("price") or deal.get("brokerPrice") or 0.0)
+        profit = float(deal.get("profit") or 0.0)
+        volume = float(deal.get("volume") or 0.0)
+        rows.append(
+            {
+                "execution_time": exec_time.isoformat() if exec_time else "",
+                "entry_type": entry,
+                "type": side,
+                "volume": volume,
+                "price": price,
+                "profit": round(profit, 2),
+                "position_id": str(deal.get("positionId") or deal.get("position_id") or ""),
+                "order_id": str(deal.get("orderId") or deal.get("order_id") or ""),
+                "comment": comment,
+                "deal_id": str(deal.get("id") or deal.get("ticket") or ""),
+            }
+        )
+
+    # Only closed positions with profit (exclude entry deals, pending fills, and loss closes)
+    rows = [r for r in rows if "OUT" in r["entry_type"] and r["profit"] > 0]
+
+    st.caption(f"Closed with profit: {len(rows)}")
+    if not rows:
+        st.info("No executed deals for selected period.")
+        return
+
+    frame = pd.DataFrame(rows)
+    frame = frame.sort_values(by="execution_time", ascending=ascending, kind="stable")
+    st.dataframe(frame, width="stretch", hide_index=True)
 
 
 def _ensure_state() -> None:
@@ -53,6 +147,8 @@ def _render_status() -> None:
     if bot is None:
         st.warning("Bot is not started.")
         return
+    if bot.running:
+        ensure_connection(bot.config.get("mt5", {}))
     status = bot.status()
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Connection", "Connected" if status.connected else "Disconnected")
@@ -70,6 +166,7 @@ def _render_positions() -> None:
     if not bot.running:
         st.info("Bot is stopped. Start it to fetch live positions.")
         return
+    ensure_connection(bot.config.get("mt5", {}))
     positions = get_positions(symbol=bot.symbol, magic=bot.magic)
     st.caption(f"Positions count: {len(positions)}")
     if not positions:
@@ -103,6 +200,7 @@ def _render_pending_orders() -> None:
     if not bot.running:
         st.info("Bot is stopped. Start it to fetch live pending orders.")
         return
+    ensure_connection(bot.config.get("mt5", {}))
     pending_orders = get_pending_orders(symbol=bot.symbol, magic=bot.magic)
     st.caption(f"Pending orders count: {len(pending_orders)}")
     if not pending_orders:
@@ -261,11 +359,13 @@ def main() -> None:
     refresh_sec = int(cfg.get("trading", {}).get("dashboard_refresh_sec", 15))
     st_autorefresh(interval=max(refresh_sec, 5) * 1000, key="dashboard_refresh")
 
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     if c1.button("Start Bot", width="stretch"):
         _start_bot()
     if c2.button("Stop Bot", width="stretch"):
         _stop_bot()
+    if c3.button("Refresh", width="stretch"):
+        st.rerun()
 
     _render_status()
     st.divider()
@@ -274,6 +374,9 @@ def main() -> None:
     st.divider()
     st.subheader("Pending Orders")
     _render_pending_orders()
+    st.divider()
+    st.subheader("Executed Deals")
+    _render_executed_deals()
     st.divider()
     st.subheader("Balance / Equity")
     _render_equity_chart()

@@ -1,0 +1,141 @@
+{"ts": "2026-02-26T11:18:22.791875+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T11:39:16.002067+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T11:53:59.148269+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T12:50:53.902797+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T13:08:46.065616+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T13:11:47.986156+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T13:33:25.224400+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T13:44:43.539532+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T13:48:22.981987+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T13:50:09.694732+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T14:00:03.353860+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T14:00:04.353125+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T14:01:24.884124+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T14:10:32.992354+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T14:23:30.637962+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T14:27:40.483272+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T14:50:07.633037+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T14:50:25.600030+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T15:40:10.544887+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T15:40:10.896425+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T16:00:56.528909+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T16:36:03.374740+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T16:36:24.271512+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T16:39:46.630547+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T16:43:02.054809+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T16:44:22.162581+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T17:03:11.682861+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T17:09:29.137821+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T17:09:30.235053+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T17:12:39.106687+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T17:22:10.854617+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T17:23:49.709670+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T17:28:00.636859+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T17:28:15.881111+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T17:30:06.776080+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T17:30:12.119095+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T17:32:23.235239+00:00", "event": "reconnect_failed", "symbol": "EURUSD"}
+{"ts": "2026-02-26T17:32:51.339187+00:00", "event": "reconnect_failed", "symbol": "EURUSD"}
+{"ts": "2026-02-26T17:33:54.344765+00:00", "event": "reconnect_failed", "symbol": "EURUSD"}
+{"ts": "2026-02-26T17:34:56.047271+00:00", "event": "reconnect_failed", "symbol": "EURUSD"}
+{"ts": "2026-02-26T17:35:25.470727+00:00", "event": "reconnect_failed", "symbol": "EURUSD"}
+{"ts": "2026-02-26T17:36:29.464190+00:00", "event": "reconnect_failed", "symbol": "EURUSD"}
+{"ts": "2026-02-26T17:36:56.581189+00:00", "event": "reconnect_failed", "symbol": "EURUSD"}
+{"ts": "2026-02-26T17:38:27.708090+00:00", "event": "reconnect_failed", "symbol": "EURUSD"}
+{"ts": "2026-02-26T17:38:33.994812+00:00", "event": "reconnect_failed", "symbol": "EURUSD"}
+{"ts": "2026-02-26T17:39:58.795974+00:00", "event": "reconnect_failed", "symbol": "EURUSD"}
+{"ts": "2026-02-26T17:40:38.535881+00:00", "event": "reconnect_failed", "symbol": "EURUSD"}
+{"ts": "2026-02-26T17:41:29.884304+00:00", "event": "reconnect_failed", "symbol": "EURUSD"}
+{"ts": "2026-02-26T17:42:11.925887+00:00", "event": "reconnect_failed", "symbol": "EURUSD"}
+{"ts": "2026-02-26T17:43:00.981638+00:00", "event": "reconnect_failed", "symbol": "EURUSD"}
+{"ts": "2026-02-26T18:03:55.879146+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s", "backoff_sec": 60.0}
+{"ts": "2026-02-26T18:05:15.717251+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T18:05:51.572936+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T18:07:12.822997+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s", "backoff_sec": 60.0}
+{"ts": "2026-02-26T18:11:00.564235+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T18:12:18.893828+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s", "backoff_sec": 60.0}
+{"ts": "2026-02-26T18:13:59.755947+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T18:16:08.744298+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T18:16:50.156867+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T18:19:47.158277+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s"}
+{"ts": "2026-02-26T18:25:13.949709+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s", "backoff_sec": 60.0}
+{"ts": "2026-02-26T18:28:11.757520+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s", "backoff_sec": 60.0}
+{"ts": "2026-02-26T19:29:51.472566+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s", "backoff_sec": 60.0}
+{"ts": "2026-02-26T21:14:21.783436+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 2, "backoff_sec": 60.0}
+{"ts": "2026-02-26T21:40:49.649625+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 3, "backoff_sec": 60.0}
+{"ts": "2026-02-26T21:44:02.444369+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 4, "backoff_sec": 80.0}
+{"ts": "2026-02-26T22:14:52.190271+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 5, "backoff_sec": 120.0}
+{"ts": "2026-02-27T21:35:35.313926+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s", "backoff_sec": 60.0}
+{"ts": "2026-02-28T01:41:31.977150+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s", "backoff_sec": 60.0}
+{"ts": "2026-02-28T02:40:17.617807+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 2, "backoff_sec": 60.0}
+{"ts": "2026-02-28T04:09:01.791006+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 3, "backoff_sec": 60.0}
+{"ts": "2026-02-28T05:26:31.601656+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 4, "backoff_sec": 80.0}
+{"ts": "2026-02-28T09:25:10.597166+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s", "backoff_sec": 60.0}
+{"ts": "2026-02-28T11:11:11.812429+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s", "backoff_sec": 60.0}
+{"ts": "2026-02-28T12:08:58.111856+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 1, "backoff_sec": 60.0}
+{"ts": "2026-02-28T23:34:47.106028+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 1, "backoff_sec": 60.0}
+{"ts": "2026-02-28T23:37:27.328465+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 2, "backoff_sec": 60.0}
+{"ts": "2026-02-28T23:40:22.272254+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 1, "backoff_sec": 60.0}
+{"ts": "2026-03-01T05:06:46.753979+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 10.0s", "backoff_sec": 60.0}
+{"ts": "2026-03-02T07:48:38.078723+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 1, "backoff_sec": 60.0}
+{"ts": "2026-03-02T09:08:33.341657+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 2, "backoff_sec": 60.0}
+{"ts": "2026-03-02T15:32:33.619984+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 1, "backoff_sec": 60.0}
+{"ts": "2026-03-02T21:51:18.886475+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 1, "backoff_sec": 60.0}
+{"ts": "2026-03-02T23:09:47.567278+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 2, "backoff_sec": 60.0}
+{"ts": "2026-03-03T05:10:00.091730+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 1, "backoff_sec": 60.0}
+{"ts": "2026-03-03T09:22:50.636157+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 1, "backoff_sec": 60.0}
+{"ts": "2026-03-03T10:51:51.880387+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 2, "backoff_sec": 60.0}
+{"ts": "2026-03-03T12:45:06.563785+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 3, "backoff_sec": 60.0}
+{"ts": "2026-03-03T15:04:56.459749+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s", "backoff_sec": 60.0}
+{"ts": "2026-03-03T17:03:06.035094+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s", "backoff_sec": 60.0}
+{"ts": "2026-03-03T19:41:28.901568+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 1, "backoff_sec": 60.0}
+{"ts": "2026-03-03T21:01:36.294238+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 2, "backoff_sec": 60.0}
+{"ts": "2026-03-03T23:18:35.031103+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 3, "backoff_sec": 60.0}
+{"ts": "2026-03-04T00:58:15.656656+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 4, "backoff_sec": 80.0}
+{"ts": "2026-03-04T03:34:45.385047+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 5, "backoff_sec": 120.0}
+{"ts": "2026-03-04T06:36:47.589850+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 6, "backoff_sec": 120.0}
+{"ts": "2026-03-04T09:40:13.020199+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 7, "backoff_sec": 120.0}
+{"ts": "2026-03-04T12:43:13.689012+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 8, "backoff_sec": 120.0}
+{"ts": "2026-03-04T15:18:10.979153+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 40.0s", "backoff_sec": 60.0}
+{"ts": "2026-03-04T16:14:31.667397+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 1, "backoff_sec": 60.0}
+{"ts": "2026-03-04T16:16:02.783004+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 2, "backoff_sec": 60.0}
+{"ts": "2026-03-04T16:17:33.908545+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 3, "backoff_sec": 60.0}
+{"ts": "2026-03-04T16:19:05.048435+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 4, "backoff_sec": 80.0}
+{"ts": "2026-03-04T16:20:56.182555+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 5, "backoff_sec": 120.0}
+{"ts": "2026-03-05T02:09:59.069207+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 1, "backoff_sec": 60.0}
+{"ts": "2026-03-05T03:50:22.044575+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 10.0s", "backoff_sec": 60.0}
+{"ts": "2026-03-05T06:29:17.882576+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 1, "backoff_sec": 60.0}
+{"ts": "2026-03-05T10:21:12.387803+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 1, "backoff_sec": 60.0}
+{"ts": "2026-03-05T10:58:06.939023+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 2, "backoff_sec": 60.0}
+{"ts": "2026-03-05T12:29:48.579127+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 3, "backoff_sec": 60.0}
+{"ts": "2026-03-05T12:50:34.804405+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 4, "backoff_sec": 80.0}
+{"ts": "2026-03-05T15:43:00.208677+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 1, "backoff_sec": 60.0}
+{"ts": "2026-03-05T16:44:01.709015+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 2, "backoff_sec": 60.0}
+{"ts": "2026-03-05T17:45:03.192628+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 3, "backoff_sec": 60.0}
+{"ts": "2026-03-05T18:46:04.539591+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 4, "backoff_sec": 80.0}
+{"ts": "2026-03-05T19:42:48.277409+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 5, "backoff_sec": 120.0}
+{"ts": "2026-03-05T21:49:04.575500+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 6, "backoff_sec": 120.0}
+{"ts": "2026-03-05T23:51:30.104767+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 7, "backoff_sec": 120.0}
+{"ts": "2026-03-06T03:07:10.718950+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 8, "backoff_sec": 120.0}
+{"ts": "2026-03-06T05:46:38.639655+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 9, "backoff_sec": 120.0}
+{"ts": "2026-03-06T07:48:41.048942+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 10, "backoff_sec": 120.0}
+{"ts": "2026-03-06T14:01:25.445660+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s", "backoff_sec": 60.0}
+{"ts": "2026-03-06T16:03:24.075103+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s", "backoff_sec": 60.0}
+{"ts": "2026-03-06T17:26:23.857032+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 1, "backoff_sec": 60.0}
+{"ts": "2026-03-06T18:37:08.929617+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 2, "backoff_sec": 60.0}
+{"ts": "2026-03-06T19:05:33.839721+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 2, "backoff_sec": 60.0}
+{"ts": "2026-03-06T19:49:20.096919+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 3, "backoff_sec": 60.0}
+{"ts": "2026-03-06T21:07:35.686755+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 3, "backoff_sec": 60.0}
+{"ts": "2026-03-06T23:50:43.847881+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 1, "backoff_sec": 60.0}
+{"ts": "2026-03-07T18:52:59.217525+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 1, "backoff_sec": 60.0}
+{"ts": "2026-03-07T21:12:19.122373+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s", "backoff_sec": 60.0}
+{"ts": "2026-03-07T21:22:31.430570+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s", "backoff_sec": 60.0}
+{"ts": "2026-03-07T22:58:17.364511+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s", "backoff_sec": 60.0}
+{"ts": "2026-03-08T04:22:26.102611+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s", "backoff_sec": 60.0}
+{"ts": "2026-03-08T04:40:43.482338+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 1, "backoff_sec": 60.0}
+{"ts": "2026-03-08T06:02:49.990440+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s", "backoff_sec": 60.0}
+{"ts": "2026-03-08T09:29:25.125180+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s", "backoff_sec": 60.0}
+{"ts": "2026-03-08T11:45:13.270377+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 1, "backoff_sec": 60.0}
+{"ts": "2026-03-08T14:04:06.113059+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 2, "backoff_sec": 60.0}
+{"ts": "2026-03-08T16:15:57.109136+00:00", "event": "reconnect_failed", "symbol": "EURUSD", "attempt": 3, "backoff_sec": 60.0}
+{"ts": "2026-03-08T21:21:57.271862+00:00", "event": "broker_timeout", "symbol": "EURUSD", "error": "Broker RPC timeout after 8.0s", "backoff_sec": 60.0}

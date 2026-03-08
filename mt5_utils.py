@@ -673,10 +673,15 @@ def get_deals_history(from_dt: datetime, to_dt: datetime, symbol: str | None = N
     bridge = _bridge()
     if bridge is None:
         return []
-    deals = bridge.get_deals_range(from_dt.astimezone(timezone.utc), to_dt.astimezone(timezone.utc))
+    raw = bridge.get_deals_range(from_dt.astimezone(timezone.utc), to_dt.astimezone(timezone.utc))
+    if raw is None:
+        return []
+    deals = raw.get("deals", raw) if isinstance(raw, dict) else raw
+    if not isinstance(deals, list):
+        return []
     if symbol is None:
         return deals
-    return [d for d in deals if str(_get(d, "symbol", default="")) == symbol]
+    return [d for d in deals if isinstance(d, dict) and str(_get(d, "symbol", default="")) == symbol]
 
 
 def get_daily_rates(symbol: str, lookback_days: int) -> list[dict[str, float]]:

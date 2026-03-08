@@ -111,9 +111,13 @@ Quick context file for new agents joining this project, so they can continue wit
 - `bot.log` and `bot.log.1` contain runtime events.
 - No dedicated structured trade journal yet (reason-per-close not persisted to CSV/database).
 
+## Grid Sync Improvements (Applied)
+- Anchor level included in grid (was missing; caused gap at anchor price).
+- Anti-duplicate: `_placed_this_cycle` set prevents restore+sync from placing same order twice in one cycle.
+- `_prune_duplicate_pending()` cancels extra orders at same level+side each sync.
+
 ## Suggested Next Improvements
 1) Add structured `trade_journal.csv` with close reason (`level/imbalance/manual/dd/tp`).
 2) Show anchor/drift/recenter diagnostics in UI status.
-3) Add stricter anti-duplicate order send guard per cycle.
-4) Add optional trend-side TP mode (deferred by user for separate discussion).
+3) Add optional trend-side TP mode (deferred by user for separate discussion).
 
