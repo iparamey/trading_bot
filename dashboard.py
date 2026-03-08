@@ -119,6 +119,8 @@ def _ensure_state() -> None:
         st.session_state.bot = None
     if "bot_thread" not in st.session_state:
         st.session_state.bot_thread = None
+    if "selected_position_tickets" not in st.session_state:
+        st.session_state.selected_position_tickets = []
 
 
 def _start_bot() -> None:
@@ -150,31 +152,40 @@ def _render_status() -> None:
     if bot.running:
         ensure_connection(bot.config.get("mt5", {}))
     status = bot.status()
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Connection", "Connected" if status.connected else "Disconnected")
     c2.metric("Imbalance", f"{status.current_imbalance:.2f}")
     c3.metric("Net Exposure", f"{status.net_exposure:.2f}")
     c4.metric("Equity", f"{status.latest_equity:.2f}")
+    baseline = status.initial_balance if status.initial_balance > 0 else None
+    pnl_from_baseline = (status.latest_balance - baseline) if baseline is not None else 0.0
+    c5.metric("PnL from baseline", f"{pnl_from_baseline:+.2f}")
+    if baseline is not None:
+        st.caption(f"Baseline balance: {baseline:.2f}")
     st.caption(f"Last action: {status.last_action}")
 
 
-def _render_positions() -> None:
+def _render_positions() -> tuple[list[Any], list[int]]:
     bot = st.session_state.bot
     if bot is None:
         st.info("Start the bot to view live positions.")
-        return
+        return [], []
     if not bot.running:
         st.info("Bot is stopped. Start it to fetch live positions.")
-        return
+        return [], []
     ensure_connection(bot.config.get("mt5", {}))
     positions = get_positions(symbol=bot.symbol, magic=bot.magic)
     st.caption(f"Positions count: {len(positions)}")
     if not positions:
         st.info("No open positions.")
-        return
+        st.session_state.selected_position_tickets = []
+        return [], []
+
+    selected_prev = {int(t) for t in st.session_state.get("selected_position_tickets", [])}
     frame = pd.DataFrame(
         [
             {
+                "select": p.ticket in selected_prev,
                 "ticket": p.ticket,
                 "symbol": p.symbol,
                 "type": p.side,
@@ -189,7 +200,20 @@ def _render_positions() -> None:
             for p in positions
         ]
     )
-    st.dataframe(frame, width="stretch", hide_index=True)
+    edited = st.data_editor(
+        frame,
+        width="stretch",
+        hide_index=True,
+        key="positions_editor",
+        disabled=["ticket", "symbol", "type", "volume", "profit", "entry", "current", "SL", "TP", "comment"],
+        column_config={
+            "select": st.column_config.CheckboxColumn("Select", help="Select position for manual TP/close"),
+        },
+    )
+    selected = [int(t) for t in edited.loc[edited["select"] == True, "ticket"].tolist()]
+    st.session_state.selected_position_tickets = selected
+    st.caption(f"Selected positions: {len(selected)}")
+    return positions, selected
 
 
 def _render_pending_orders() -> None:
@@ -246,41 +270,58 @@ def _render_equity_chart() -> None:
     st.plotly_chart(fig, config={"responsive": True})
 
 
-def _render_manual_controls() -> None:
+def _render_manual_controls(selected_tickets: list[int]) -> None:
     bot = st.session_state.bot
     if bot is None:
         st.info("Start the bot to use manual controls.")
         return
-    c1, c2, c3, c4 = st.columns(4)
+
+    mode_c1, mode_c2 = st.columns([2, 1])
+    mode_options = {"Auto TP": "auto", "Manual TP": "manual"}
+    current_mode = bot.tp_mode()
+    selected_mode_label = mode_c1.radio(
+        "Take-Profit mode",
+        options=list(mode_options.keys()),
+        horizontal=True,
+        index=0 if current_mode == "auto" else 1,
+    )
+    if mode_options[selected_mode_label] != current_mode:
+        if bot.set_tp_mode(mode_options[selected_mode_label]):
+            st.success(f"TP mode switched to {mode_options[selected_mode_label]}")
+        else:
+            st.error("Failed to switch TP mode")
+    mode_c2.caption("Manual mode: bot does not auto-update TP.")
+
+    c1, c2, c3 = st.columns(3)
     if c1.button("Close All", width="stretch"):
         closed, cancelled = bot.manual_close_all()
-        st.success(f"Closed positions: {closed}, cancelled pending: {cancelled}")
-    if c2.button("Close Profitable Buys", width="stretch"):
-        closed = bot.manual_close_profitable("BUY")
-        st.success(f"Closed BUY positions: {closed}")
-    if c3.button("Close Profitable Sells", width="stretch"):
-        closed = bot.manual_close_profitable("SELL")
-        st.success(f"Closed SELL positions: {closed}")
-    if c4.button("Reset Grid", width="stretch"):
+        _stop_bot()
+        st.success(f"Closed positions: {closed}, cancelled pending: {cancelled}. Bot stopped.")
+    with c2.popover("Close Selected Orders"):
+        st.write(f"Selected positions: {len(selected_tickets)}")
+        if not selected_tickets:
+            st.info("Select one or more positions in table above.")
+        else:
+            st.warning("Confirm closing selected positions.")
+            if st.button("Confirm Close Selected", width="stretch"):
+                closed = bot.manual_close_selected(selected_tickets)
+                st.success(f"Closed selected positions: {closed}")
+                st.rerun()
+    if c3.button("Reset Grid", width="stretch"):
         cancelled = bot.reset_grid()
         st.success(f"Cancelled pending orders: {cancelled}")
 
-    st.markdown("#### Take Profit For Open Positions")
-    tp_c1, tp_c2, tp_c3, tp_c4 = st.columns(4)
-    buy_tp = tp_c1.number_input("BUY TP price", min_value=0.0, value=0.0, step=0.0001, format="%.5f")
-    sell_tp = tp_c2.number_input("SELL TP price", min_value=0.0, value=0.0, step=0.0001, format="%.5f")
-    if tp_c3.button("Apply BUY TP", width="stretch"):
-        if buy_tp <= 0:
-            st.error("Set BUY TP price > 0")
+    st.markdown("#### Take Profit For Selected Positions")
+    tp_c1, tp_c2 = st.columns(2)
+    selected_tp = tp_c1.number_input("Selected TP price", min_value=0.0, value=0.0, step=0.0001, format="%.5f")
+    if tp_c2.button("Apply TP To Selected", width="stretch"):
+        if selected_tp <= 0:
+            st.error("Set TP price > 0")
+        elif not selected_tickets:
+            st.error("Select one or more positions first.")
         else:
-            updated = bot.manual_set_take_profit("BUY", buy_tp)
-            st.success(f"Updated BUY TP for positions: {updated}")
-    if tp_c4.button("Apply SELL TP", width="stretch"):
-        if sell_tp <= 0:
-            st.error("Set SELL TP price > 0")
-        else:
-            updated = bot.manual_set_take_profit("SELL", sell_tp)
-            st.success(f"Updated SELL TP for positions: {updated}")
+            updated = bot.manual_set_take_profit_selected(selected_tickets, selected_tp)
+            st.success(f"Updated TP for selected positions: {updated}")
 
 
 def _render_config_editor() -> None:
@@ -370,7 +411,7 @@ def main() -> None:
     _render_status()
     st.divider()
     st.subheader("Open Positions")
-    _render_positions()
+    _, selected_tickets = _render_positions()
     st.divider()
     st.subheader("Pending Orders")
     _render_pending_orders()
@@ -381,7 +422,7 @@ def main() -> None:
     st.subheader("Balance / Equity")
     _render_equity_chart()
     st.divider()
-    _render_manual_controls()
+    _render_manual_controls(selected_tickets)
     st.divider()
     _render_config_editor()
     st.divider()
