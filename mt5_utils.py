@@ -120,6 +120,7 @@ class _MetaApiBridge:
         self.connection: Any = None
         self.connected: bool = False
         self.symbol_specs: dict[str, dict[str, Any]] = {}
+        self.tp_update_errors: dict[int, str] = {}
         self._is_stopping: bool = False
 
     def start(self) -> bool:
@@ -143,6 +144,7 @@ class _MetaApiBridge:
                     self.account = None
                     self.api = None
                     self.symbol_specs = {}
+                    self.tp_update_errors = {}
                 return self._call(self._connect_async())
             except Exception as exc:  # noqa: BLE001
                 LOGGER.exception("MetaApi start failed: %s", exc)
@@ -170,6 +172,7 @@ class _MetaApiBridge:
             self.account = None
             self.api = None
             self.symbol_specs = {}
+            self.tp_update_errors = {}
         self._is_stopping = False
 
     async def _close_async(self) -> None:
@@ -432,10 +435,32 @@ class _MetaApiBridge:
                 ),
                 timeout=12.0,
             )
-            return str(_get(result, "stringCode", default="")).upper() in {"OK", "TRADE_RETCODE_DONE"}
+            code = str(_get(result, "stringCode", default="")).upper()
+            if code in {"OK", "TRADE_RETCODE_DONE", "ERR_NO_ERROR"}:
+                self.tp_update_errors.pop(int(position_ticket), None)
+                return True
+            reason = str(
+                _get(
+                    result if isinstance(result, dict) else {},
+                    "message",
+                    "description",
+                    default="unknown broker retcode",
+                )
+            )
+            self.tp_update_errors[int(position_ticket)] = f"{code}: {reason}"
+            LOGGER.warning(
+                "Failed to update TP for position %s: %s",
+                position_ticket,
+                self.tp_update_errors[int(position_ticket)],
+            )
+            return False
         except Exception as exc:  # noqa: BLE001
+            self.tp_update_errors[int(position_ticket)] = str(exc)
             LOGGER.warning("Failed to update TP for position %s: %s", position_ticket, exc)
             return False
+
+    def get_last_tp_error(self, position_ticket: int) -> str | None:
+        return self.tp_update_errors.get(int(position_ticket))
 
     def cancel_order(self, order_ticket: int) -> bool:
         if not self.ensure_connected():
@@ -825,6 +850,14 @@ def clear_position_take_profit(position_ticket: int) -> bool:
     if bridge is None:
         return False
     return bridge.modify_position_tp(position_ticket, None)
+
+
+def get_last_tp_update_error(position_ticket: int) -> str | None:
+    """Return latest broker-side TP update error for position ticket."""
+    bridge = _bridge()
+    if bridge is None:
+        return None
+    return bridge.get_last_tp_error(position_ticket)
 
 
 def cancel_order(order_ticket: int) -> bool:

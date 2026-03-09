@@ -33,6 +33,7 @@ from mt5_utils import (
     get_pending_orders,
     get_positions,
     get_tick,
+    get_last_tp_update_error,
     is_connected,
     normalize_price,
     pips_to_price,
@@ -744,6 +745,12 @@ class HedgingGridBot:
 
         updated = 0
         cleared = 0
+        closed_market = 0
+        close_passed_max = max(int(closing_cfg.get("tp_close_passed_targets_max_per_cycle", 1)), 0)
+        close_passed_candidates: list[dict[str, Any]] = []
+        tick_for_debug = get_tick(self.symbol)
+        debug_bid = float(tick_for_debug.bid) if tick_for_debug is not None else None
+        debug_ask = float(tick_for_debug.ask) if tick_for_debug is not None else None
         for pos in positions:
             if pos.side in clear_tp_sides:
                 if pos.tp > 0 and clear_position_take_profit(pos.ticket):
@@ -773,6 +780,63 @@ class HedgingGridBot:
             tp_level = normalize_price(self.symbol, tp_level)
             if pos.tp > 0 and abs(pos.tp - tp_level) <= tolerance:
                 continue
+
+            # If market has already crossed planned TP, broker can reject TP modification
+            # with "Invalid stops". In that case queue market close candidates by profit.
+            if debug_bid is not None and debug_ask is not None:
+                if pos.side == "BUY" and tp_level <= (debug_ask + tolerance):
+                    if debug_bid >= tp_level and pos.profit > 0:
+                        close_passed_candidates.append(
+                            {
+                                "ticket": pos.ticket,
+                                "side": pos.side,
+                                "profit": float(pos.profit),
+                                "entry": float(pos.price_open),
+                                "tp": float(tp_level),
+                            }
+                        )
+                    else:
+                        self._log_order_event(
+                            "auto_tp_set_skipped_market_guard",
+                            side=pos.side,
+                            ticket=pos.ticket,
+                            entry=pos.price_open,
+                            current_tp=pos.tp,
+                            tp=tp_level,
+                            min_steps=min_distance_steps,
+                            bid=debug_bid,
+                            ask=debug_ask,
+                            reason="buy_tp_not_above_current_ask",
+                            result=False,
+                        )
+                    continue
+                if pos.side == "SELL" and tp_level >= (debug_bid - tolerance):
+                    if debug_ask <= tp_level and pos.profit > 0:
+                        close_passed_candidates.append(
+                            {
+                                "ticket": pos.ticket,
+                                "side": pos.side,
+                                "profit": float(pos.profit),
+                                "entry": float(pos.price_open),
+                                "tp": float(tp_level),
+                            }
+                        )
+                    else:
+                        self._log_order_event(
+                            "auto_tp_set_skipped_market_guard",
+                            side=pos.side,
+                            ticket=pos.ticket,
+                            entry=pos.price_open,
+                            current_tp=pos.tp,
+                            tp=tp_level,
+                            min_steps=min_distance_steps,
+                            bid=debug_bid,
+                            ask=debug_ask,
+                            reason="sell_tp_not_below_current_bid",
+                            result=False,
+                        )
+                    continue
+
             if set_position_take_profit(pos.ticket, pos.symbol, tp_level):
                 updated += 1
                 self._log_order_event(
@@ -782,17 +846,51 @@ class HedgingGridBot:
                     tp=tp_level,
                     result=True,
                 )
-            if updated + cleared >= max_updates:
+            else:
+                self._log_order_event(
+                    "auto_tp_set_rejected",
+                    side=pos.side,
+                    ticket=pos.ticket,
+                    entry=pos.price_open,
+                    current_tp=pos.tp,
+                    tp=tp_level,
+                    min_steps=min_distance_steps,
+                    bid=debug_bid,
+                    ask=debug_ask,
+                    error=get_last_tp_update_error(pos.ticket) or "unknown",
+                    result=False,
+                )
+            if updated + cleared + closed_market >= max_updates:
                 break
 
-        if updated or cleared:
+        if close_passed_candidates and close_passed_max > 0 and (updated + cleared + closed_market) < max_updates:
+            for cand in sorted(close_passed_candidates, key=lambda x: x["profit"], reverse=True):
+                if closed_market >= close_passed_max:
+                    break
+                if updated + cleared + closed_market >= max_updates:
+                    break
+                if close_position(int(cand["ticket"]), deviation=self.deviation):
+                    closed_market += 1
+                    self._log_order_event(
+                        "auto_tp_close_passed_target",
+                        side=cand["side"],
+                        ticket=int(cand["ticket"]),
+                        entry=cand["entry"],
+                        planned_tp=cand["tp"],
+                        profit=cand["profit"],
+                        bid=debug_bid,
+                        ask=debug_ask,
+                        result=True,
+                    )
+
+        if updated or cleared or closed_market:
             clear_label = ",".join(sorted(clear_tp_sides)) if clear_tp_sides else "-"
             self._record_action(
-                f"Auto TP sync: updated={updated}, cleared={cleared}, balance={balance}, "
+                f"Auto TP sync: updated={updated}, cleared={cleared}, closed_market={closed_market}, balance={balance}, "
                 f"min_steps(BUY/SELL)={min_steps_by_side['BUY']:.1f}/{min_steps_by_side['SELL']:.1f}, "
                 f"cleared_sides={clear_label}, interval={sync_interval_sec:.1f}s"
             )
-        return updated + cleared
+        return updated + cleared + closed_market
 
     def _imbalance_values(self) -> tuple[float, str | None]:
         positions = get_positions(symbol=self.symbol, magic=self.magic)
@@ -898,6 +996,15 @@ class HedgingGridBot:
                     tp=normalize_price(self.symbol, tp_price),
                     result=True,
                 )
+            else:
+                self._log_order_event(
+                    "manual_set_tp_rejected",
+                    side=pos.side,
+                    ticket=pos.ticket,
+                    tp=normalize_price(self.symbol, tp_price),
+                    error=get_last_tp_update_error(pos.ticket) or "unknown",
+                    result=False,
+                )
         self._record_action(f"Set TP {tp_price:.5f} for {side_upper} positions: {updated}")
         return updated
 
@@ -921,6 +1028,15 @@ class HedgingGridBot:
                     ticket=pos.ticket,
                     tp=normalize_price(self.symbol, tp_price),
                     result=True,
+                )
+            else:
+                self._log_order_event(
+                    "manual_set_tp_selected_rejected",
+                    side=pos.side,
+                    ticket=pos.ticket,
+                    tp=normalize_price(self.symbol, tp_price),
+                    error=get_last_tp_update_error(pos.ticket) or "unknown",
+                    result=False,
                 )
         self._record_action(f"Set TP {tp_price:.5f} for selected positions: {updated}")
         return updated
