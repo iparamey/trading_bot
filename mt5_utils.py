@@ -465,13 +465,28 @@ class _MetaApiBridge:
     def cancel_order(self, order_ticket: int) -> bool:
         if not self.ensure_connected():
             return False
+        if int(order_ticket) <= 0:
+            return False
         for attempt in range(1, 4):
             try:
+                # Re-check live pending list to avoid cancelling already-gone orders
+                # right after reconnect/synchronization.
+                live_orders = self._call(self.connection.get_orders(), timeout=8.0) or []
+                live_tickets = {_to_int(_get(o, "id", "ticket", default=0)) for o in live_orders}
+                if int(order_ticket) not in live_tickets:
+                    return True
                 result = self._call(self.connection.cancel_order(order_id=str(order_ticket)), timeout=12.0)
-                return str(_get(result, "stringCode", default="")).upper() in {"OK", "TRADE_RETCODE_DONE"}
+                code = str(_get(result, "stringCode", default="")).upper()
+                if code in {"OK", "TRADE_RETCODE_DONE"}:
+                    return True
+                reason = str(_get(result if isinstance(result, dict) else {}, "message", "description", default="")).lower()
+                if "invalid trade parameters" in reason or "not found" in reason:
+                    # Broker may report stale/non-existent order right after reconnect.
+                    return True
+                return False
             except Exception as exc:  # noqa: BLE001
                 err = str(exc).lower()
-                if "not found" in err:
+                if "not found" in err or "invalid trade parameters" in err:
                     # Already cancelled/filled at broker side.
                     return True
                 if ("cpu credits" in err or "frozen" in err) and attempt < 3:

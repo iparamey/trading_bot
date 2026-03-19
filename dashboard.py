@@ -121,6 +121,13 @@ def _ensure_state() -> None:
         st.session_state.bot_thread = None
     if "selected_position_tickets" not in st.session_state:
         st.session_state.selected_position_tickets = []
+    if "autorefresh_paused" not in st.session_state:
+        st.session_state.autorefresh_paused = False
+    if "autorefresh_interval_sec" not in st.session_state:
+        cfg = load_config(CONFIG_PATH)
+        st.session_state.autorefresh_interval_sec = int(
+            cfg.get("trading", {}).get("dashboard_refresh_sec", 15)
+        )
 
 
 def _start_bot() -> None:
@@ -397,8 +404,24 @@ def main() -> None:
     _ensure_state()
 
     cfg = load_config(CONFIG_PATH)
-    refresh_sec = int(cfg.get("trading", {}).get("dashboard_refresh_sec", 15))
-    st_autorefresh(interval=max(refresh_sec, 5) * 1000, key="dashboard_refresh")
+
+    with st.expander("Auto-refresh", expanded=False):
+        r1, r2 = st.columns(2)
+        with r1:
+            st.checkbox("Pause auto-refresh", key="autorefresh_paused", help="Pause to work with orders without page refresh")
+        with r2:
+            st.number_input(
+                "Refresh interval (sec)",
+                min_value=5,
+                max_value=300,
+                key="autorefresh_interval_sec",
+                help="Used when not paused",
+            )
+
+    paused = st.session_state.autorefresh_paused
+    interval_sec = max(int(st.session_state.autorefresh_interval_sec), 5)
+    interval_ms = 3600 * 1000 if paused else interval_sec * 1000
+    st_autorefresh(interval=interval_ms, key="dashboard_refresh")
 
     c1, c2, c3 = st.columns(3)
     if c1.button("Start Bot", width="stretch"):
@@ -412,6 +435,7 @@ def main() -> None:
     st.divider()
     st.subheader("Open Positions")
     _, selected_tickets = _render_positions()
+    _render_manual_controls(selected_tickets)
     st.divider()
     st.subheader("Pending Orders")
     _render_pending_orders()
@@ -421,8 +445,6 @@ def main() -> None:
     st.divider()
     st.subheader("Balance / Equity")
     _render_equity_chart()
-    st.divider()
-    _render_manual_controls(selected_tickets)
     st.divider()
     _render_config_editor()
     st.divider()
