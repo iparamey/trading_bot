@@ -128,6 +128,14 @@ def _ensure_state() -> None:
         st.session_state.autorefresh_interval_sec = int(
             cfg.get("trading", {}).get("dashboard_refresh_sec", 15)
         )
+    if "positions_freeze" not in st.session_state:
+        st.session_state.positions_freeze = False
+    if "positions_snapshot" not in st.session_state:
+        st.session_state.positions_snapshot = []
+    if "positions_sort_by" not in st.session_state:
+        st.session_state.positions_sort_by = "entry"
+    if "positions_sort_ascending" not in st.session_state:
+        st.session_state.positions_sort_ascending = True
 
 
 def _start_bot() -> None:
@@ -180,9 +188,29 @@ def _render_positions() -> tuple[list[Any], list[int]]:
     if not bot.running:
         st.info("Bot is stopped. Start it to fetch live positions.")
         return [], []
-    ensure_connection(bot.config.get("mt5", {}))
-    positions = get_positions(symbol=bot.symbol, magic=bot.magic)
-    st.caption(f"Positions count: {len(positions)}")
+
+    c1, c2, c3 = st.columns(3)
+    freeze = c1.toggle(
+        "Freeze positions table",
+        key="positions_freeze",
+        help="Lock current snapshot so you can sort/select/close without live updates",
+    )
+    c2.selectbox(
+        "Sort open positions by",
+        options=["entry", "current", "profit", "type", "volume", "ticket"],
+        key="positions_sort_by",
+    )
+    c3.toggle("Ascending sort", key="positions_sort_ascending")
+
+    if freeze and st.session_state.positions_snapshot:
+        positions = list(st.session_state.positions_snapshot)
+        st.caption(f"Positions count: {len(positions)} (frozen snapshot)")
+    else:
+        ensure_connection(bot.config.get("mt5", {}))
+        positions = get_positions(symbol=bot.symbol, magic=bot.magic)
+        st.session_state.positions_snapshot = list(positions)
+        st.caption(f"Positions count: {len(positions)}")
+
     if not positions:
         st.info("No open positions.")
         st.session_state.selected_position_tickets = []
@@ -207,6 +235,9 @@ def _render_positions() -> tuple[list[Any], list[int]]:
             for p in positions
         ]
     )
+    sort_by = st.session_state.get("positions_sort_by", "entry")
+    ascending = bool(st.session_state.get("positions_sort_ascending", True))
+    frame = frame.sort_values(by=sort_by, ascending=ascending, kind="stable")
     edited = st.data_editor(
         frame,
         width="stretch",
@@ -221,6 +252,45 @@ def _render_positions() -> tuple[list[Any], list[int]]:
     st.session_state.selected_position_tickets = selected
     st.caption(f"Selected positions: {len(selected)}")
     return positions, selected
+
+
+def _render_no_tp_window(positions: list[Any]) -> None:
+    bot = st.session_state.bot
+    if bot is None or not positions:
+        return
+    keep_no_tp = int(bot.config.get("closing", {}).get("tp_no_tp_extreme_count_per_side", 0))
+    if keep_no_tp <= 0:
+        return
+
+    by_ticket = {int(p.ticket): p for p in positions}
+    grouped = bot.no_tp_extreme_window(positions)
+    buy_rows = [
+        {"ticket": t, "entry": float(by_ticket[t].price_open)}
+        for t in grouped.get("BUY", [])
+        if t in by_ticket
+    ]
+    sell_rows = [
+        {"ticket": t, "entry": float(by_ticket[t].price_open)}
+        for t in grouped.get("SELL", [])
+        if t in by_ticket
+    ]
+    if not buy_rows and not sell_rows:
+        return
+
+    st.caption(f"No-TP extreme window (per side): {keep_no_tp}")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**BUY extremes (lowest entry)**")
+        if buy_rows:
+            st.dataframe(pd.DataFrame(buy_rows).sort_values(by="entry", ascending=True), width="stretch", hide_index=True)
+        else:
+            st.caption("No BUY tickets in no-TP window")
+    with c2:
+        st.markdown("**SELL extremes (highest entry)**")
+        if sell_rows:
+            st.dataframe(pd.DataFrame(sell_rows).sort_values(by="entry", ascending=False), width="stretch", hide_index=True)
+        else:
+            st.caption("No SELL tickets in no-TP window")
 
 
 def _render_pending_orders() -> None:
@@ -420,8 +490,10 @@ def main() -> None:
 
     paused = st.session_state.autorefresh_paused
     interval_sec = max(int(st.session_state.autorefresh_interval_sec), 5)
-    interval_ms = 3600 * 1000 if paused else interval_sec * 1000
-    st_autorefresh(interval=interval_ms, key="dashboard_refresh")
+    if paused:
+        st.caption("Auto-refresh is paused.")
+    else:
+        st_autorefresh(interval=interval_sec * 1000, key="dashboard_refresh")
 
     c1, c2, c3 = st.columns(3)
     if c1.button("Start Bot", width="stretch"):
@@ -434,7 +506,8 @@ def main() -> None:
     _render_status()
     st.divider()
     st.subheader("Open Positions")
-    _, selected_tickets = _render_positions()
+    positions, selected_tickets = _render_positions()
+    _render_no_tp_window(positions)
     _render_manual_controls(selected_tickets)
     st.divider()
     st.subheader("Pending Orders")

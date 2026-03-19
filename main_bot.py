@@ -8,7 +8,7 @@ import json
 import logging
 import threading
 import time
-from collections import deque
+from collections import Counter, deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
@@ -179,6 +179,8 @@ class HedgingGridBot:
         self._reconnect_fail_count: int = 0
         self._placed_this_cycle: set[tuple[str, float]] = set()
         self._tp_recovery_after_hard_imbalance = False
+        self._last_duplicate_audit_at: datetime | None = None
+        self._last_duplicate_signature: tuple[tuple[str, float, int], ...] = ()
         self._load_state()
 
     @property
@@ -478,15 +480,27 @@ class HedgingGridBot:
             side, level = self.position_registry.pop(ticket)
             if self.stop_new_orders:
                 continue
+            level_norm = normalize_price(self.symbol, level)
+            tolerance = pips_to_price(self.symbol, 0.5)
+            if self._active_position_exists(side, level_norm, tolerance=tolerance, positions_cache=current):
+                continue
+            if self._pending_exists(
+                side,
+                level_norm,
+                tolerance=tolerance,
+                pending_cache=get_pending_orders(symbol=self.symbol, magic=self.magic),
+                placed_this_cycle=self._placed_this_cycle,
+            ):
+                continue
             tick = get_tick(self.symbol)
             if tick is None:
                 continue
-            comment = f"GRID|{side}|{level:.5f}"
+            comment = f"GRID|{side}|{level_norm:.5f}"
             ok = place_pending_order(
                 symbol=self.symbol,
                 side=side,
                 volume=self._calc_lot(balance=max(self.initial_balance, 100.0)),
-                price=level,
+                price=level_norm,
                 magic=self.magic,
                 deviation=self.deviation,
                 comment=comment,
@@ -494,12 +508,12 @@ class HedgingGridBot:
                 current_ask=float(tick.ask),
             )
             if ok:
-                self._placed_this_cycle.add((side, normalize_price(self.symbol, level)))
-                self._record_action(f"Restored pending {side} @ {level:.5f} after position close")
+                self._placed_this_cycle.add((side, level_norm))
+                self._record_action(f"Restored pending {side} @ {level_norm:.5f} after position close")
             self._log_order_event(
                 "restore_pending_after_position_close",
                 side=side,
-                level=level,
+                level=level_norm,
                 ticket=ticket,
                 result=bool(ok),
             )
@@ -679,6 +693,17 @@ class HedgingGridBot:
         """Expose current TP mode for dashboard controls."""
         return self._tp_mode()
 
+    def no_tp_extreme_window(self, positions: list[Any] | None = None) -> dict[str, list[int]]:
+        """Expose current no-TP extreme window tickets grouped by side."""
+        current_positions = positions if positions is not None else get_positions(symbol=self.symbol, magic=self.magic)
+        no_tp_tickets = self._tp_extreme_no_tp_tickets(current_positions)
+        grouped: dict[str, list[int]] = {"BUY": [], "SELL": []}
+        for pos in current_positions:
+            ticket = int(pos.ticket)
+            if ticket in no_tp_tickets and pos.side in grouped:
+                grouped[pos.side].append(ticket)
+        return grouped
+
     def _tp_policy(self, positions: list[Any]) -> tuple[dict[str, float], set[str], int]:
         """Return min-steps by side + sides requiring TP clear."""
         closing_cfg = self.config.get("closing", {})
@@ -715,6 +740,42 @@ class HedgingGridBot:
 
         return min_steps_by_side, clear_tp_sides, balance
 
+    def _tp_extreme_no_tp_tickets(self, positions: list[Any]) -> set[int]:
+        """Return tickets that should keep TP cleared on side extremes."""
+        closing_cfg = self.config.get("closing", {})
+        keep_no_tp = max(int(closing_cfg.get("tp_no_tp_extreme_count_per_side", 0)), 0)
+        if keep_no_tp <= 0:
+            return set()
+        if self.grid_anchor_price is None:
+            return set()
+
+        grid_levels = sorted(self._grid_levels(self.grid_anchor_price))
+        if not grid_levels:
+            return set()
+
+        buy_no_tp_levels = set(grid_levels[:keep_no_tp])
+        sell_no_tp_levels = set(grid_levels[-keep_no_tp:])
+        tolerance = pips_to_price(self.symbol, 0.5)
+        step = self._grid_step_price()
+
+        no_tp_tickets: set[int] = set()
+        for pos in positions:
+            parsed = _parse_grid_comment(pos.comment)
+            if parsed and parsed[0] == pos.side:
+                mapped_level = normalize_price(self.symbol, float(parsed[1]))
+            elif step > 0:
+                mapped_level = normalize_price(self.symbol, round(float(pos.price_open) / step) * step)
+            else:
+                mapped_level = normalize_price(self.symbol, float(pos.price_open))
+
+            if pos.side == "BUY":
+                if any(abs(mapped_level - lvl) <= tolerance for lvl in buy_no_tp_levels):
+                    no_tp_tickets.add(int(pos.ticket))
+            elif pos.side == "SELL":
+                if any(abs(mapped_level - lvl) <= tolerance for lvl in sell_no_tp_levels):
+                    no_tp_tickets.add(int(pos.ticket))
+        return no_tp_tickets
+
     def _auto_assign_take_profits(self) -> int:
         """Auto-assign TP by levels with balance-aware distance/clear rules."""
         closing_cfg = self.config.get("closing", {})
@@ -742,6 +803,7 @@ class HedgingGridBot:
         tolerance = pips_to_price(self.symbol, 0.5)
         max_updates = int(closing_cfg.get("tp_max_updates_per_cycle", 30))
         min_steps_by_side, clear_tp_sides, balance = self._tp_policy(positions)
+        no_tp_tickets = self._tp_extreme_no_tp_tickets(positions)
 
         updated = 0
         cleared = 0
@@ -757,6 +819,19 @@ class HedgingGridBot:
                     cleared += 1
                     self._log_order_event(
                         "auto_tp_clear_for_imbalance",
+                        side=pos.side,
+                        ticket=pos.ticket,
+                        result=True,
+                    )
+                if updated + cleared >= max_updates:
+                    break
+                continue
+
+            if int(pos.ticket) in no_tp_tickets:
+                if pos.tp > 0 and clear_position_take_profit(pos.ticket):
+                    cleared += 1
+                    self._log_order_event(
+                        "auto_tp_clear_for_extreme_window",
                         side=pos.side,
                         ticket=pos.ticket,
                         result=True,
@@ -885,10 +960,11 @@ class HedgingGridBot:
 
         if updated or cleared or closed_market:
             clear_label = ",".join(sorted(clear_tp_sides)) if clear_tp_sides else "-"
+            no_tp_cnt = len(no_tp_tickets)
             self._record_action(
                 f"Auto TP sync: updated={updated}, cleared={cleared}, closed_market={closed_market}, balance={balance}, "
                 f"min_steps(BUY/SELL)={min_steps_by_side['BUY']:.1f}/{min_steps_by_side['SELL']:.1f}, "
-                f"cleared_sides={clear_label}, interval={sync_interval_sec:.1f}s"
+                f"cleared_sides={clear_label}, no_tp_window={no_tp_cnt}, interval={sync_interval_sec:.1f}s"
             )
         return updated + cleared + closed_market
 
@@ -1126,6 +1202,75 @@ class HedgingGridBot:
                 return True
         return False
 
+    def _position_level_key(self, pos: Any) -> tuple[str, float] | None:
+        side = str(pos.side).upper()
+        if side not in {"BUY", "SELL"}:
+            return None
+        parsed = _parse_grid_comment(str(pos.comment or ""))
+        if parsed and parsed[0] == side:
+            level = normalize_price(self.symbol, float(parsed[1]))
+            return side, level
+        step = self._grid_step_price()
+        if step > 0:
+            inferred = normalize_price(self.symbol, round(float(pos.price_open) / step) * step)
+            return side, inferred
+        return side, normalize_price(self.symbol, float(pos.price_open))
+
+    def _maybe_audit_duplicates(self) -> None:
+        """Periodically audit duplicates by side+level for positions and pending."""
+        trading_cfg = self.config.get("trading", {})
+        interval_sec = max(float(trading_cfg.get("duplicate_audit_interval_sec", 60)), 5.0)
+        now = datetime.now(timezone.utc)
+        if self._last_duplicate_audit_at is not None:
+            if (now - self._last_duplicate_audit_at).total_seconds() < interval_sec:
+                return
+        self._last_duplicate_audit_at = now
+
+        positions = get_positions(symbol=self.symbol, magic=self.magic)
+        pending = get_pending_orders(symbol=self.symbol, magic=self.magic)
+
+        pos_counter: Counter[tuple[str, float]] = Counter()
+        for pos in positions:
+            key = self._position_level_key(pos)
+            if key is not None:
+                pos_counter[key] += 1
+        pending_counter: Counter[tuple[str, float]] = Counter(
+            (str(o.side).upper(), normalize_price(self.symbol, float(o.price_open))) for o in pending
+        )
+
+        pos_dups = sorted((side, lvl, cnt) for (side, lvl), cnt in pos_counter.items() if cnt > 1)
+        pending_dups_before = sorted((side, lvl, cnt) for (side, lvl), cnt in pending_counter.items() if cnt > 1)
+        cancelled = self._prune_duplicate_pending() if pending_dups_before else 0
+
+        pending_after = get_pending_orders(symbol=self.symbol, magic=self.magic)
+        pending_after_counter: Counter[tuple[str, float]] = Counter(
+            (str(o.side).upper(), normalize_price(self.symbol, float(o.price_open))) for o in pending_after
+        )
+        pending_dups_after = sorted((side, lvl, cnt) for (side, lvl), cnt in pending_after_counter.items() if cnt > 1)
+
+        signature = tuple(pos_dups + pending_dups_after)
+        has_issue = bool(pos_dups or pending_dups_after or cancelled > 0)
+        if not has_issue:
+            self._last_duplicate_signature = ()
+            return
+        if signature == self._last_duplicate_signature and cancelled == 0:
+            return
+        self._last_duplicate_signature = signature
+
+        self._record_action(
+            f"Duplicate audit: pos_dups={len(pos_dups)}, pending_dups={len(pending_dups_after)}, "
+            f"pending_cancelled={cancelled}",
+            level=logging.WARNING,
+        )
+        self._log_critical_event(
+            "duplicate_levels_detected",
+            positions_duplicates=pos_dups,
+            pending_duplicates_before=pending_dups_before,
+            pending_duplicates_after=pending_dups_after,
+            pending_cancelled=cancelled,
+            audit_interval_sec=interval_sec,
+        )
+
     async def run_async(self) -> None:
         """Main async control loop."""
         self.running = True
@@ -1163,6 +1308,7 @@ class HedgingGridBot:
 
                 if not self.stop_new_orders:
                     self._sync_grid()
+                self._maybe_audit_duplicates()
 
                 self._append_equity_point()
             except BrokerTimeoutError as exc:
