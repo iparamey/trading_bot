@@ -746,27 +746,25 @@ class HedgingGridBot:
         keep_no_tp = max(int(closing_cfg.get("tp_no_tp_extreme_count_per_side", 0)), 0)
         if keep_no_tp <= 0:
             return set()
-        if self.grid_anchor_price is None:
+        active_levels: set[float] = set()
+        for pos in positions:
+            key = self._position_level_key(pos)
+            if key is not None:
+                active_levels.add(key[1])
+        if not active_levels:
             return set()
 
-        grid_levels = sorted(self._grid_levels(self.grid_anchor_price))
-        if not grid_levels:
-            return set()
-
-        buy_no_tp_levels = set(grid_levels[:keep_no_tp])
-        sell_no_tp_levels = set(grid_levels[-keep_no_tp:])
+        ordered_levels = sorted(active_levels)
+        buy_no_tp_levels = set(ordered_levels[:keep_no_tp])
+        sell_no_tp_levels = set(ordered_levels[-keep_no_tp:])
         tolerance = pips_to_price(self.symbol, 0.5)
-        step = self._grid_step_price()
 
         no_tp_tickets: set[int] = set()
         for pos in positions:
-            parsed = _parse_grid_comment(pos.comment)
-            if parsed and parsed[0] == pos.side:
-                mapped_level = normalize_price(self.symbol, float(parsed[1]))
-            elif step > 0:
-                mapped_level = normalize_price(self.symbol, round(float(pos.price_open) / step) * step)
-            else:
-                mapped_level = normalize_price(self.symbol, float(pos.price_open))
+            key = self._position_level_key(pos)
+            if key is None:
+                continue
+            _, mapped_level = key
 
             if pos.side == "BUY":
                 if any(abs(mapped_level - lvl) <= tolerance for lvl in buy_no_tp_levels):
